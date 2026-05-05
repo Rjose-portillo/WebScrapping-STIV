@@ -32,11 +32,17 @@ El proyecto sigue una estructura modular para facilitar su mantenimiento y escal
 └── init_env.ps1        # Script de automatización de entorno para Windows.
 ```
 
-### Tecnologías Utilizadas
-- **Python 3.10+**
-- **Playwright**: Para la navegación y manejo de eventos dinámicos en ASP.NET.
-- **Pandas**: Para la gestión del manifiesto de datos y metadatos.
-- **Python-dotenv**: Gestión segura de configuraciones.
+### Tecnologías y Librerías
+- **Python 3.10+**: Lenguaje base.
+- **Playwright**: Motor de automatización del navegador para manejar eventos dinámicos de ASP.NET (DevExpress).
+- **Pandas**: Estructuración de metadatos y generación del manifiesto CSV.
+- **Python-dotenv**: Manejo de configuraciones y variables de entorno.
+- **Logging**: Sistema de trazabilidad nativo de Python.
+
+### ¿Requiere un LLM para su ejecución?
+**No.** Este agente de extracción (Scraper) funciona de manera determinística y autónoma utilizando lógica de programación tradicional y selectores web. No requiere claves de API de OpenAI, Anthropic o similares para descargar los archivos. 
+
+Sin embargo, el proyecto está diseñado bajo el concepto de **"LLM-Ready"**: los datos extraídos y el `manifest.csv` están estructurados específicamente para alimentar a un modelo de lenguaje (RAG/FinBERT) en la siguiente fase del pipeline.
 
 ---
 

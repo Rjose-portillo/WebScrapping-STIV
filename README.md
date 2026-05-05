@@ -10,6 +10,7 @@ Este proyecto es una solución modular de ingeniería de datos diseñada para au
 - **Filtro Inteligente**: El agente valida cada registro en memoria y solo descarga aquellos marcados como **"Prospecto"**, ignorando DICIs, escritos y otros documentos no relevantes.
 - **Clasificación por Entidad**: Organiza automáticamente las descargas en subcarpetas basadas en la **Denominación Social de la Operadora**.
 - **Anti-Blocking System**: Implementa retardos aleatorios (*throttling*) entre descargas y cambios de página para imitar el comportamiento humano y evitar baneos de IP.
+- **Procesamiento OCR Inteligente**: Detecta automáticamente si un PDF es una imagen (escaneado) y lo transcribe a texto plano (`.txt`) para facilitar el análisis por un LLM y ahorrar tokens.
 - **Data Governance**: Genera un archivo `manifest.csv` que sirve como índice maestro de todas las descargas, incluyendo metadatos como fecha de consulta, versión y ruta de almacenamiento local.
 - **Resiliencia**: Incluye una estrategia de reintentos (`RetryStrategy`) para manejar caídas o intermitencias del servidor de la CNBV.
 

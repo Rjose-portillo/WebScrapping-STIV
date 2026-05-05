@@ -15,4 +15,7 @@ pip install -r requirements.txt
 Write-Host "Instalando navegadores de Playwright..." -ForegroundColor Green
 playwright install chromium
 
+Write-Host "NOTA: Para las funciones de OCR (reconocimiento de texto en imágenes), asegúrate de tener instalado Tesseract OCR en tu sistema." -ForegroundColor Yellow
+Write-Host "Puedes descargarlo aquí: https://github.com/UB-Mannheim/tesseract/wiki" -ForegroundColor Cyan
+
 Write-Host "Entorno configurado exitosamente. Ahora puedes ejecutar 'python main.py'" -ForegroundColor Cyan

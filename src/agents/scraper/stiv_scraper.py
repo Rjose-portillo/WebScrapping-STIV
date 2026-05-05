@@ -1,6 +1,8 @@
 import os
 import logging
 import pandas as pd
+import time
+import random
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from src.agents.scraper.retry_strategy import RetryStrategy
@@ -18,7 +20,7 @@ class STIVScraper:
         self.manifest_path = manifest_path
         self.retry_strategy = RetryStrategy(max_retries=3, backoff_factor=2.0)
         
-        # Data Governance: Asegurar infraestructura de datos (data/raw)
+        # Data Governance: Asegurar infraestructura de datos (Archivos)
         os.makedirs(self.download_dir, exist_ok=True)
         
         # Inicializar el manifest (Catálogo de Metadatos) si no existe
@@ -53,6 +55,11 @@ class STIVScraper:
                 tipo_doc = fila.locator(STIVSelectors.COL_TIPO_DOC).inner_text().strip()
                 fecha_doc = fila.locator(STIVSelectors.COL_FECHA).inner_text().strip()
                 version = fila.locator(STIVSelectors.COL_VERSION).inner_text().strip()
+
+                # --- VALIDACIÓN DE FILTRO: Solo "Prospecto" ---
+                if "PROSPECTO" not in tipo_doc.upper():
+                    logger.info(f"Saltando registro {i+1}: Tipo '{tipo_doc}' no es Prospecto.")
+                    continue
                 
                 # Limpieza de nombres para el FileSystem (Gobernanza)
                 import re
@@ -60,7 +67,7 @@ class STIVScraper:
                 if not denominacion_clean:
                     denominacion_clean = "Entidad_Desconocida"
                     
-                tipo_doc_clean = "DICI" if "DICI" in tipo_doc.upper() else "Prospecto"
+                tipo_doc_clean = "Prospecto" # Ya validado
                 fecha_clean = fecha_doc.replace("/", "-")
                 version_clean = re.sub(r'[\\/*?:"<>|]', "", version).replace(" ", "_")[:50]
                 
@@ -71,6 +78,9 @@ class STIVScraper:
                 nombre_archivo = f"{pizarra_actual}_{tipo_doc_clean}_{fecha_clean}_{version_clean}.pdf"
                 ruta_destino = os.path.join(directorio_entidad, nombre_archivo)
                 
+                # --- ANTI-BLOCKING: Delay aleatorio antes de descargar ---
+                time.sleep(random.uniform(1.5, 3.5))
+
                 # Orquestar Descarga
                 with page.expect_download(timeout=60000) as download_info:
                     fila.locator(STIVSelectors.COL_ARCHIVO).click()
@@ -80,26 +90,22 @@ class STIVScraper:
                 logger.info(f"Descargado: {denominacion_clean} / {nombre_archivo}")
                 estado = "Exito"
                 descargados_en_pagina += 1
+
+                # Registro de metadatos para el manifest
+                manifest_records.append({
+                    'fecha_consulta': datetime.now().isoformat(),
+                    'pizarra': pizarra_actual,
+                    'tipo_documento': tipo_doc_clean,
+                    'fecha_documento': fecha_doc,
+                    'version': version,
+                    'archivo_destino': ruta_destino,
+                    'estado': estado
+                })
+
             except Exception as e:
                 logger.error(f"Fallo al procesar registro {i+1}: {e}")
-                denominacion_clean = "N/A"
-                pizarra_actual = "N/A"
-                tipo_doc_clean = "Desconocido"
-                ruta_destino = "N/A"
-                fecha_doc = "N/A"
-                version = "N/A"
-                estado = f"Error: {str(e)[:50]}"
-
-            # Registro de auditoría
-            manifest_records.append({
-                'fecha_consulta': datetime.now().isoformat(),
-                'pizarra': pizarra_actual,
-                'tipo_documento': tipo_doc_clean,
-                'fecha_documento': fecha_doc,
-                'version': version,
-                'archivo_destino': ruta_destino,
-                'estado': estado
-            })
+                # Loggear error en el manifest si es crítico
+                continue
             
         # Volcar al Manifest
         if manifest_records:
@@ -111,7 +117,7 @@ class STIVScraper:
     def extraer(self):
         """Controlador principal de extracción masiva con paginación."""
         with sync_playwright() as p:
-            # Iniciamos en modo visual (headless=False)
+            # Iniciamos en modo visual (headless=False) para supervisar
             browser = p.chromium.launch(headless=False)
             context = browser.new_context(accept_downloads=True)
             page = context.new_page()
@@ -128,24 +134,28 @@ class STIVScraper:
                     descargados = self._procesar_resultados_pagina(page)
                     total_descargados += descargados
                     
+                    # --- ANTI-BLOCKING: Delay entre páginas ---
+                    time.sleep(random.uniform(4.0, 7.0))
+
                     # Checar si existe botón de siguiente página y no está deshabilitado
                     next_button = page.locator(STIVSelectors.BTN_SIGUIENTE).last
                     
                     if next_button.count() > 0 and "dxp-buttonDisabled" not in next_button.get_attribute("class"):
                         logger.info("Avanzando a la siguiente página...")
                         next_button.click()
+                        
                         # Esperar al PostBack de DevExpress
-                        page.wait_for_timeout(2000) 
+                        page.wait_for_timeout(3000) 
                         page.wait_for_selector(STIVSelectors.TABLA_RESULTADOS, state="visible")
-                        # Opcionalmente esperar a que desaparezca el loading panel si existe
                         pagina_actual += 1
                     else:
-                        logger.info("Se ha alcanzado la última página.")
+                        logger.info("Se ha alcanzado la última página o no hay más resultados.")
                         break
                         
             except Exception as e:
                 logger.error(f"El flujo de extracción masiva falló: {e}")
                 
             finally:
-                logger.info(f"Extracción finalizada. Total de documentos descargados: {total_descargados}")
+                logger.info(f"Extracción finalizada. Total de documentos 'Prospecto' descargados: {total_descargados}")
                 browser.close()
+

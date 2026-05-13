@@ -6,13 +6,12 @@ Este proyecto es una solución modular de ingeniería de datos diseñada para au
 
 ## 🚀 Funcionalidades Principales
 
-- **Extracción Masiva**: Navega automáticamente por todas las páginas del portal STIV sin necesidad de filtros manuales.
-- **Filtro Inteligente**: El agente valida cada registro en memoria y solo descarga aquellos marcados como **"Prospecto"**, ignorando DICIs, escritos y otros documentos no relevantes.
-- **Clasificación por Entidad**: Organiza automáticamente las descargas en subcarpetas basadas en la **Denominación Social de la Operadora**.
-- **Anti-Blocking System**: Implementa retardos aleatorios (*throttling*) entre descargas y cambios de página para imitar el comportamiento humano y evitar baneos de IP.
-- **Procesamiento OCR Inteligente**: Detecta automáticamente si un PDF es una imagen (escaneado) y lo transcribe a texto plano (`.txt`) para facilitar el análisis por un LLM y ahorrar tokens.
-- **Data Governance**: Genera un archivo `manifest.csv` que sirve como índice maestro de todas las descargas, incluyendo metadatos como fecha de consulta, versión y ruta de almacenamiento local.
-- **Resiliencia**: Incluye una estrategia de reintentos (`RetryStrategy`) para manejar caídas o intermitencias del servidor de la CNBV.
+- **Extracción Masiva Dual**: Navega automáticamente por el portal STIV de la CNBV y el portal de fondos de HSBC México.
+- **Filtro Inteligente**: Valida cada registro y descarga Prospectos y DICIs, ignorando documentos no relevantes.
+- **Base de Datos para Tesis**: Integra una base de datos SQLite con esquema relacional para análisis histórico y comparativo.
+- **Anti-Blocking System**: Implementa retardos aleatorios (*throttling*) y estrategias de reintento para evitar bloqueos.
+- **Validación por Hash**: Evita la duplicidad de datos mediante el cálculo de hashes SHA-256 para cada archivo descargado.
+- **Data Governance**: Genera manifiestos y logs detallados para asegurar la trazabilidad científica de los datos.
 
 ---
 
@@ -25,12 +24,14 @@ El proyecto sigue una estructura modular para facilitar su mantenimiento y escal
 ├── config/             # Configuración de entorno y selectores CSS/XPath.
 ├── src/                # Código fuente del pipeline.
 │   ├── agents/
-│   │   ├── scraper/    # Agente de navegación y descarga (Playwright).
-│   │   └── parser/     # Placeholder para análisis de PDFs y RAG.
-├── Archivos/           # Repositorio local de datos (Organizado por Entidad).
+│   │   ├── scraper/    # Agentes de extracción (STIV y HSBC).
+│   │   └── parser/     # Extracción de datos y OCR.
+│   ├── database/       # Gestión de persistencia (SQLite).
+├── Archivos/           # Repositorio local de PDFs originales.
+├── data/               # Base de datos y JSONs procesados.
 ├── logs/               # Trazabilidad técnica de la ejecución.
-├── main.py             # Orquestador principal del pipeline.
-└── init_env.ps1        # Script de automatización de entorno para Windows.
+├── main.py             # Orquestador principal.
+└── inspect_db.py       # Utilidad de visualización de datos.
 ```
 
 ### Tecnologías y Librerías

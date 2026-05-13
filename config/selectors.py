@@ -22,3 +22,16 @@ class STIVSelectors:
     # Paginación
     BTN_SIGUIENTE = ".dxp-button[onclick*='PBN']"
     LOADING_PANEL = "#ctl00_DefaultPlaceholder_TablaDocumentos_TL"
+
+class HSBCSelectors:
+    # URL: https://hsbctrading.hsbc.com.mx/investment/funds/price-yield
+    DROPDOWN_FONDOS = 'select[aria-label="Default select example"]'
+    TABLA_RESULTADOS = 'div.table-responsive'
+    FILAS_RESULTADOS = '.table-responsive table tbody tr'
+    
+    # Columnas
+    COL_FONDO_NOMBRE = 'td:nth-child(1)'
+    
+    # Enlaces de documentos (usando títulos como selectores robustos)
+    LINK_PROSPECTO = 'a[title="Prospecto de Información"]'
+    LINK_DICI = 'a[title="Documento Clave"]'

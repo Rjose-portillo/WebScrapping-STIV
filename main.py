@@ -3,8 +3,10 @@ import logging
 from dotenv import load_dotenv
 
 from src.agents.scraper.stiv_scraper import STIVScraper
+from src.agents.scraper.hsbc_scraper import HSBCScraper
 from src.agents.parser.ocr_agent import OCRAgent
 from src.agents.parser.cnbv_extractor import CNBVExtractor
+from src.database.db_manager import DatabaseManager
 
 # --- CONFIGURACIÓN DE LOGGING ---
 os.makedirs('logs', exist_ok=True)
@@ -36,12 +38,26 @@ def main():
     
     # 1. FASE DE EXTRACCIÓN (Scraping)
     logger.info("Fase 1: Extracción / Descarga Masiva...")
-    scraper = STIVScraper(
+    
+    # 1.1 CNBV STIV
+    logger.info("Iniciando extracción CNBV STIV...")
+    stiv_scraper = STIVScraper(
         url=stiv_url, 
         download_dir=download_dir, 
         manifest_path=manifest_path
     )
-    scraper.extraer()
+    stiv_scraper.extraer()
+
+    # 1.2 HSBC
+    logger.info("Iniciando extracción HSBC...")
+    hsbc_url = 'https://hsbctrading.hsbc.com.mx/investment/funds/price-yield'
+    hsbc_manifest = os.path.join(download_dir, 'manifest_hsbc.csv')
+    hsbc_scraper = HSBCScraper(
+        url=hsbc_url,
+        download_dir=download_dir,
+        manifest_path=hsbc_manifest
+    )
+    hsbc_scraper.extraer()
     
     # 2. FASE DE PROCESAMIENTO OCR (Detección de escaneos)
     logger.info("Fase 2: Validación OCR / Data Readiness...")
@@ -49,8 +65,9 @@ def main():
     ocr_agent.process_directory(download_dir)
     
     # 3. FASE DE EXTRACCIÓN ESTRUCTURADA (Esquema de Tesis)
-    logger.info("Fase 3: Extracción de Alta Precisión (Anexo 2 CUFI)...")
+    logger.info("Fase 3: Extracción de Alta Precisión e Integración en DB...")
     extractor = CNBVExtractor()
+    db_manager = DatabaseManager() # Se inicializa la base de datos
     
     # Recorrer archivos descargados (PDF o TXT generado por OCR)
     for root, _, files in os.walk(download_dir):
@@ -68,7 +85,13 @@ def main():
                 try:
                     result = extractor.extract(target_path, url_stiv=stiv_url)
                     
-                    # Guardar JSON con el mismo nombre en la carpeta processed
+                    # Determinar institución para la base de datos
+                    institucion = "HSBC" if "HSBC" in root.upper() else "CNBV_STIV"
+                    
+                    # Guardar en Base de Datos (Validación de duplicados incluida)
+                    db_manager.save_extraction_result(result, institution_name=institucion)
+                    
+                    # Guardar JSON como respaldo
                     json_name = f"{os.path.splitext(file)[0]}.json"
                     json_output = os.path.join(processed_dir, json_name)
                     extractor.save_json(result, json_output)

@@ -1,6 +1,8 @@
 # STIV Scraper: Data Pipeline for Financial Prospectuses
 
-Este proyecto es una solución modular de ingeniería de datos diseñada para automatizar la extracción masiva de prospectos de inversión del portal **STIV de la CNBV**. Está construido bajo principios de **Data Governance** y **Data Readiness**, asegurando que los datos extraídos sean consistentes, trazables y estén listos para pipelines de IA (RAG / FinBERT).
+Este proyecto es una solución modular de ingeniería de datos diseñada para automatizar la extracción masiva de prospectos de inversión del portal **STIV de la CNBV** y **HSBC**. Está construido bajo principios de **Data Governance** y **Data Readiness**, asegurando que los datos extraídos sean consistentes, trazables y estén listos para pipelines de IA (RAG / FinBERT).
+
+Puedes consultar la visión estratégica en el documento de [Objetivos del Proyecto](OBJETIVOS_PROYECTO.md).
 
 ---
 

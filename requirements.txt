@@ -6,3 +6,6 @@ pdf2image
 Pillow
 pymupdf
 pdfplumber
+streamlit
+plotly
+numpy

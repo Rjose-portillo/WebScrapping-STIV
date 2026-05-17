@@ -2,10 +2,7 @@ venv/
 __pycache__/
 *.pyc
 .env
-Archivos/
 logs/
 .DS_Store
-*.pdf
-manifest.csv
 data/*.db
 data/processed/

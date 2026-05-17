@@ -201,30 +201,65 @@ class STIVScraper:
                 while pagina_actual <= paginas_totales:
                     logger.info(f"--- Procesando Página {pagina_actual} de {paginas_totales} ---")
                     
-                    # Evitar procesar la primera página si no es necesario (ya estamos ahí) o navegar
-                    if pagina_actual > 1:
-                        logger.info(f"Cambiando a la página {pagina_actual}...")
-                        # PN0 es página 1, PN1 es página 2
-                        # Ejecutar evento DevExpress
-                        page.evaluate(f"aspxGVPagerOnClick('ctl00_DefaultPlaceholder_TablaDocumentos', 'PN{pagina_actual - 1}')")
-                        
-                        # Espera inteligente y robusta para páginas lentas (DevExpress postbacks)
-                        page.wait_for_timeout(1000) # Breve pausa para asegurar que el loader aparezca
-                        
-                        # Esperar dinámicamente hasta 2 minutos a que el panel de carga desaparezca
-                        try:
-                            page.wait_for_selector(STIVSelectors.LOADING_PANEL, state="hidden", timeout=120000)
-                        except Exception as e:
-                            logger.warning(f"Timeout o problema al esperar el panel de carga: {e}")
-                            
-                        # Asegurarse de que la tabla esté visible de nuevo
-                        page.wait_for_selector(STIVSelectors.TABLA_RESULTADOS, state="visible", timeout=60000)
-                        page.wait_for_timeout(random.uniform(2000, 4000)) # Espera biológica post-carga
-                    
+                    # 1. Procesar registros de la página actual
                     descargados = self._procesar_resultados_pagina(page)
                     total_descargados += descargados
                     
-                    pagina_actual += 1
+                    # 2. Si ya llegamos a la última página, terminamos de inmediato
+                    if pagina_actual >= paginas_totales:
+                        logger.info("¡Se ha alcanzado y procesado la última página!")
+                        break
+                        
+                    # 3. Cambiar a la siguiente página secuencialmente usando el botón Siguiente
+                    siguiente_pagina = pagina_actual + 1
+                    logger.info(f"Cambiando a la página {siguiente_pagina} usando el botón Siguiente...")
+                    
+                    btn_siguiente = page.locator(STIVSelectors.BTN_SIGUIENTE).first
+                    if not btn_siguiente.is_visible():
+                        # Fallback robusto en caso de que cambie el selector
+                        btn_siguiente = page.locator(".dxp-button").filter(has=page.locator("img")).last
+                        
+                    # Hacer click físico real en el botón de Siguiente (PBN)
+                    btn_siguiente.click()
+                    
+                    # Esperar la carga de la página de forma inteligente y segura
+                    logger.info("Esperando que la página termine de cargar...")
+                    
+                    # A. Esperar a que el panel de carga aparezca y desaparezca (DevExpress postback)
+                    try:
+                        page.wait_for_selector(STIVSelectors.LOADING_PANEL, state="visible", timeout=3000)
+                        logger.info("Panel de carga detectado.")
+                    except Exception:
+                        pass
+                        
+                    try:
+                        page.wait_for_selector(STIVSelectors.LOADING_PANEL, state="hidden", timeout=120000)
+                        logger.info("Panel de carga ocultado con éxito.")
+                    except Exception:
+                        pass
+                        
+                    # B. Esperar obligatoriamente a que el texto de .dxp-summary cambie reflejando la nueva página
+                    page_changed = False
+                    target_text = f"Página {siguiente_pagina} de"
+                    for _ in range(30): # Máximo 15 segundos de validación
+                        try:
+                            summary_text = page.locator(".dxp-summary").first.inner_text()
+                            if target_text in summary_text:
+                                logger.info(f"¡Confirmado! El paginador cambió a: {summary_text}")
+                                page_changed = True
+                                break
+                        except Exception:
+                            pass
+                        page.wait_for_timeout(500)
+                        
+                    if not page_changed:
+                        logger.warning(f"No se pudo verificar visualmente el cambio a la página {siguiente_pagina}, continuando con el DOM actual.")
+                        
+                    # C. Pausa biológica de seguridad post-carga
+                    page.wait_for_timeout(random.uniform(2000, 4000))
+                    
+                    # Avanzar el contador a la siguiente página
+                    pagina_actual = siguiente_pagina
                         
             except Exception as e:
                 logger.critical(f"Fallo crítico en el pipeline de extracción: {e}")

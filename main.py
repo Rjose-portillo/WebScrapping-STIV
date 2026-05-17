@@ -6,9 +6,9 @@ from dotenv import load_dotenv
 
 from src.agents.scraper.stiv_scraper import STIVScraper
 from src.agents.scraper.hsbc_scraper import HSBCScraper
-# from src.agents.parser.ocr_agent import OCRAgent
-# from src.agents.parser.cnbv_extractor import CNBVExtractor
-# from src.database.db_manager import DatabaseManager
+from src.agents.parser.ocr_agent import OCRAgent
+from src.agents.parser.cnbv_extractor import CNBVExtractor
+from src.database.db_manager import DatabaseManager
 
 # --- CONFIGURACIÓN DE LOGGING ---
 os.makedirs('logs', exist_ok=True)
@@ -98,44 +98,44 @@ def main():
                 raise e
     
     # 2. FASE DE PROCESAMIENTO OCR (Detección de escaneos)
-    logger.info("Fase 2: Validación OCR / Data Readiness... [SALTADA TEMPORALMENTE]")
-    # ocr_agent = OCRAgent()
-    # ocr_agent.process_directory(download_dir)
+    logger.info("Fase 2: Validación OCR / Data Readiness... [ACTIVA]")
+    ocr_agent = OCRAgent()
+    ocr_agent.process_directory(download_dir)
     
     # 3. FASE DE EXTRACCIÓN ESTRUCTURADA (Esquema de Tesis)
-    logger.info("Fase 3: Extracción de Alta Precisión e Integración en DB... [SALTADA TEMPORALMENTE]")
-    # extractor = CNBVExtractor()
-    # db_manager = DatabaseManager() # Se inicializa la base de datos
+    logger.info("Fase 3: Extracción de Alta Precisión e Integración en DB... [ACTIVA]")
+    extractor = CNBVExtractor()
+    db_manager = DatabaseManager() # Se inicializa la base de datos
     
     # Recorrer archivos descargados (PDF o TXT generado por OCR)
-    # for root, _, files in os.walk(download_dir):
-    #     for file in files:
-    #         # Priorizamos el TXT si existe (significa que fue procesado por OCR)
-    #         # De lo contrario procesamos el PDF original.
-    #         file_path = os.path.join(root, file)
-    #         
-    #         # Evitar procesar archivos de metadatos o logs
-    #         if file.lower().endswith(('.pdf', '.docx')):
-    #             # Verificar si existe un transcrito OCR
-    #             ocr_path = file_path.rsplit('.', 1)[0] + "_transcribed.txt"
-    #             target_path = ocr_path if os.path.exists(ocr_path) else file_path
-    #             
-    #             try:
-    #                 result = extractor.extract(target_path, url_stiv=stiv_url)
-    #                 
-    #                 # Determinar institución para la base de datos
-    #                 institucion = "HSBC" if "HSBC" in root.upper() else "CNBV_STIV"
-    #                 
-    #                 # Guardar en Base de Datos (Validación de duplicados incluida)
-    #                 db_manager.save_extraction_result(result, institution_name=institucion)
-    #                 
-    #                 # Guardar JSON como respaldo
-    #                 json_name = f"{os.path.splitext(file)[0]}.json"
-    #                 json_output = os.path.join(processed_dir, json_name)
-    #                 extractor.save_json(result, json_output)
-    #                 
-    #             except Exception as e:
-    #                 logger.error(f"Error procesando {file}: {e}")
+    for root, _, files in os.walk(download_dir):
+        for file in files:
+            # Priorizamos el TXT si existe (significa que fue procesado por OCR)
+            # De lo contrario procesamos el PDF original.
+            file_path = os.path.join(root, file)
+            
+            # Evitar procesar archivos de metadatos o logs
+            if file.lower().endswith(('.pdf', '.docx')):
+                # Verificar si existe un transcrito OCR
+                ocr_path = file_path.rsplit('.', 1)[0] + "_transcribed.txt"
+                target_path = ocr_path if os.path.exists(ocr_path) else file_path
+                
+                try:
+                    result = extractor.extract(target_path, url_stiv=stiv_url)
+                    
+                    # Determinar institución para la base de datos
+                    institucion = "HSBC" if "HSBC" in root.upper() else "CNBV_STIV"
+                    
+                    # Guardar en Base de Datos (Validación de duplicados incluida)
+                    db_manager.save_extraction_result(result, institution_name=institucion)
+                    
+                    # Guardar JSON como respaldo
+                    json_name = f"{os.path.splitext(file)[0]}.json"
+                    json_output = os.path.join(processed_dir, json_name)
+                    extractor.save_json(result, json_output)
+                    
+                except Exception as e:
+                    logger.error(f"Error procesando {file}: {e}")
 
     logger.info("====== DESCARGA DE DOCUMENTOS COMPLETADA EXITOSAMENTE ======")
 

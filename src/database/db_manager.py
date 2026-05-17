@@ -136,6 +136,8 @@ class DatabaseManager:
             ("metricas_prospecto", "benchmark_oficial", "TEXT"),
             ("metricas_prospecto", "var_promedio_observado", "TEXT"),
             ("metricas_prospecto", "calificacion_crediticia", "TEXT"),
+            ("metricas_prospecto", "volatilidad_historica", "TEXT"),
+            ("metricas_prospecto", "nivel_riesgo_calculado", "INTEGER"),
             ("documentos", "url_origen", "TEXT"),
         ]
 
@@ -229,7 +231,7 @@ class DatabaseManager:
                             ruta_archivo, url_origen
                         ) VALUES (?, ?, ?, ?, ?)
                     ''', (
-                        serie_id, "Prospecto", file_hash,
+                        serie_id, metadata.get("tipo_documento", "Prospecto"), file_hash,
                         metadata.get("nombre_archivo"),
                         metadata.get("url_stiv"),
                     ))
@@ -256,8 +258,10 @@ class DatabaseManager:
                         calificacion_riesgo_mercado,
                         comision_administracion_anual,
                         comision_desempeno,
-                        gastos_totales_ter
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        gastos_totales_ter,
+                        volatilidad_historica,
+                        nivel_riesgo_calculado
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     doc_id,
                     fondo.get("tipo_administracion"),
@@ -270,6 +274,8 @@ class DatabaseManager:
                     costos.get("comision_administracion_anual"),
                     costos.get("comision_desempeno"),
                     costos.get("gastos_totales_ter"),
+                    riesgo.get("volatilidad_historica"),
+                    riesgo.get("nivel_riesgo_calculado"),
                 ))
 
                 # 6. Rendimientos Historicos (por periodo con benchmark)
@@ -334,6 +340,11 @@ class DatabaseManager:
                 m.comision_administracion_anual,
                 m.comision_desempeno,
                 m.tipo_administracion,
+                m.var_maximo_autorizado,
+                m.var_promedio_observado,
+                m.volatilidad_historica,
+                m.calificacion_riesgo_mercado,
+                m.nivel_riesgo_calculado,
                 m.benchmark_oficial,
                 r.valor_rendimiento AS rendimiento_12m,
                 r.valor_benchmark AS benchmark_12m,
@@ -390,7 +401,10 @@ class DatabaseManager:
                 m.comision_desempeno,
                 m.gastos_totales_ter,
                 m.tipo_administracion,
-                m.var_maximo_autorizado
+                m.var_maximo_autorizado,
+                m.volatilidad_historica,
+                m.calificacion_riesgo_mercado,
+                m.nivel_riesgo_calculado
             FROM metricas_prospecto m
             JOIN documentos d ON m.documento_id = d.id
             JOIN series s ON d.serie_id = s.id

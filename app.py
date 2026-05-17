@@ -107,6 +107,7 @@ page = st.sidebar.radio(
         "📈 Desempeno vs Costo",
         "💰 Analisis de Comisiones",
         "📉 Rendimientos Historicos",
+        "🛡️ Analisis de Riesgo",
     ],
 )
 
@@ -318,7 +319,8 @@ elif page == "📈 Desempeno vs Costo":
             display_cols = [
                 "clave_pizarra", "serie_accionaria", "institucion",
                 "categoria", "tipo_administracion",
-                "gastos_totales_ter", "rendimiento_12m", "benchmark_12m",
+                "gastos_totales_ter", "rendimiento_12m", "benchmark_oficial",
+                "nivel_riesgo_calculado", "calificacion_riesgo_mercado",
             ]
             available_cols = [c for c in display_cols if c in df_valid.columns]
             st.dataframe(
@@ -565,6 +567,85 @@ elif page == "📉 Rendimientos Historicos":
             "fecha_corte": "Fecha Corte",
         })
         st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+
+# ---------------------------------------------------------------------------
+# Pagina: Analisis de Riesgo
+# ---------------------------------------------------------------------------
+elif page == "🛡️ Analisis de Riesgo":
+    st.title("🛡️ Analisis de Riesgo (CNBV vs Calculado)")
+    st.markdown(
+        """
+        **Objetivo**: Comparar el nivel de riesgo oficial de la CNBV (1-7) 
+        con el riesgo calculado basado en el VaR y la volatilidad extraida.
+        
+        - **Nivel 1**: Muy Bajo.
+        - **Nivel 7**: Muy Alto.
+        """
+    )
+
+    raw_data = load_comisiones_data() # Reusamos esta query que tiene datos de riesgo
+    
+    if not raw_data:
+        st.warning("⚠️ No hay datos de riesgo disponibles.")
+    else:
+        df = pd.DataFrame(raw_data)
+        
+        # Grafico comparativo: Riesgo Oficial vs Calculado
+        st.subheader("Distribucion de Niveles de Riesgo")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if "calificacion_riesgo_mercado" in df.columns and df["calificacion_riesgo_mercado"].notna().any():
+                fig_off = px.histogram(
+                    df, x="calificacion_riesgo_mercado", 
+                    title="Niveles de Riesgo Oficiales (CNBV)",
+                    labels={"calificacion_riesgo_mercado": "Nivel (1-7)"},
+                    template="plotly_white", color_discrete_sequence=['#2E86AB']
+                )
+                st.plotly_chart(fig_off, use_container_width=True)
+            else:
+                st.info("No hay datos de Riesgo Oficial (CNBV) extraidos.")
+                
+        with col2:
+            if "nivel_riesgo_calculado" in df.columns and df["nivel_riesgo_calculado"].notna().any():
+                fig_calc = px.histogram(
+                    df, x="nivel_riesgo_calculado", 
+                    title="Niveles de Riesgo Calculados (Tesis)",
+                    labels={"nivel_riesgo_calculado": "Nivel (1-7)"},
+                    template="plotly_white", color_discrete_sequence=['#F18F01']
+                )
+                st.plotly_chart(fig_calc, use_container_width=True)
+            else:
+                st.info("No hay datos para calcular el Nivel de Riesgo.")
+
+        # Analisis de Volatilidad
+        st.subheader("Volatilidad Historica vs Gastos Totales (TER)")
+        df["vol_num"] = df["volatilidad_historica"].apply(parse_percentage_to_float)
+        df["ter_num"] = df["gastos_totales_ter"].apply(parse_percentage_to_float)
+        
+        df_vol = df.dropna(subset=["vol_num", "ter_num"])
+        if not df_vol.empty:
+            fig_vol = px.scatter(
+                df_vol, x="vol_num", y="ter_num", 
+                color="categoria", hover_name="clave_pizarra",
+                title="¿Mayor Riesgo implica mayor Costo?",
+                labels={"vol_num": "Volatilidad (%)", "ter_num": "TER (%)"},
+                template="plotly_white"
+            )
+            st.plotly_chart(fig_vol, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("Matriz de Riesgo")
+        st.dataframe(
+            df[[
+                "clave_pizarra", "institucion", "categoria", 
+                "calificacion_riesgo_mercado", "nivel_riesgo_calculado", 
+                "var_maximo_autorizado", "volatilidad_historica"
+            ]].sort_values("nivel_riesgo_calculado", ascending=False),
+            use_container_width=True, hide_index=True
+        )
 
 
 # ---------------------------------------------------------------------------

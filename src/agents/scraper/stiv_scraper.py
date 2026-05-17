@@ -74,6 +74,7 @@ class STIVScraper:
         manifest_records = []
         descargados_en_pagina = 0
         
+        consecutive_errors = 0
         for i in range(num_registros):
             fila = filas.nth(i)
             try:
@@ -84,14 +85,18 @@ class STIVScraper:
                 fecha_doc = fila.locator(STIVSelectors.COL_FECHA).inner_text().strip()
                 version = fila.locator(STIVSelectors.COL_VERSION).inner_text().strip()
 
-                # 2. Validación: Solo "Prospecto"
-                if "PROSPECTO" not in tipo_doc.upper():
-                    logger.debug(f"Saltando registro {i+1}: Tipo '{tipo_doc}' no es Prospecto.")
+                # 2. Validación: "Prospecto" o "DICI" (Documento Clave)
+                tipo_doc_upper = tipo_doc.upper()
+                is_prospecto = "PROSPECTO" in tipo_doc_upper
+                is_dici = "DICI" in tipo_doc_upper or "DOCUMENTO DE INFORMACIÓN CLAVE" in tipo_doc_upper or "INFORMACIÓN CLAVE" in tipo_doc_upper
+                
+                if not (is_prospecto or is_dici):
+                    logger.debug(f"Saltando registro {i+1}: Tipo '{tipo_doc}' no es Prospecto ni DICI.")
                     continue
                 
                 # 3. Preparación de Rutas y Nombres (Data Readiness)
                 denominacion_clean = self._limpiar_nombre(denominacion) or "Entidad_Desconocida"
-                tipo_doc_clean = "Prospecto"
+                tipo_doc_clean = "Prospecto" if is_prospecto else "DICI"
                 fecha_clean = fecha_doc.replace("/", "-")
                 version_clean = self._limpiar_nombre(version, 50).replace(" ", "_")
                 
@@ -101,8 +106,13 @@ class STIVScraper:
                 nombre_archivo = f"{pizarra_actual}_{tipo_doc_clean}_{fecha_clean}_{version_clean}.pdf"
                 ruta_destino = os.path.join(directorio_entidad, nombre_archivo)
                 
-                # 4. Descarga con Anti-Blocking Delay
-                time.sleep(random.uniform(1.5, 3.5))
+                # Si ya existe, saltar para ahorrar ancho de banda
+                if os.path.exists(ruta_destino):
+                    consecutive_errors = 0
+                    continue
+                
+                # 4. Descarga con Anti-Blocking Delay (un poco más largo para evitar bloqueos)
+                time.sleep(random.uniform(2.5, 4.5))
 
                 with page.expect_download(timeout=60000) as download_info:
                     fila.locator(STIVSelectors.COL_ARCHIVO).click()
@@ -113,6 +123,7 @@ class STIVScraper:
                 logger.info(f"Descargado: {denominacion_clean} / {nombre_archivo}")
                 estado = "Exito"
                 descargados_en_pagina += 1
+                consecutive_errors = 0 # Reiniciar contador al tener éxito
 
                 # 5. Registro en Manifest
                 manifest_records.append({
@@ -126,7 +137,10 @@ class STIVScraper:
                 })
 
             except PlaywrightTimeoutError:
-                logger.error(f"Timeout al descargar registro {i+1} en página.")
+                consecutive_errors += 1
+                logger.error(f"Timeout al descargar registro {i+1} en página (Falla {consecutive_errors}/3 consecutivas).")
+                if consecutive_errors >= 3:
+                    raise RuntimeError("Se detectaron 3 timeouts consecutivos de descarga. Es muy probable un bloqueo de sesión (403) o caída de servidor.")
             except Exception as e:
                 logger.error(f"Error inesperado en registro {i+1}: {e}")
                 continue
@@ -139,42 +153,82 @@ class STIVScraper:
         return descargados_en_pagina
 
     def extraer(self) -> None:
-        """Controlador principal de extracción masiva con paginación y resiliencia."""
+        """Controlador principal de extracción masiva con paginación y evasión avanzada."""
         with sync_playwright() as p:
-            browser: Browser = p.chromium.launch(headless=False)
-            context: BrowserContext = browser.new_context(accept_downloads=True)
+            # Evasión de Antidetect (WAF Azure)
+            browser: Browser = p.chromium.launch(
+                headless=False,
+                channel="msedge",
+                args=["--disable-blink-features=AutomationControlled"]
+            )
+            
+            context: BrowserContext = browser.new_context(
+                accept_downloads=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
+                viewport={"width": 1280, "height": 800}
+            )
+            
             page: Page = context.new_page()
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            """)
             
             try:
                 self.retry_strategy.execute(self._navegar_a_busqueda, page)
                 
+                # Validar de inmediato si la IP está bloqueada por el WAF (403 Forbidden)
+                page_title = page.title()
+                if "403" in page_title or "Forbidden" in page_title or "403" in page.locator("body").inner_text()[:200]:
+                    raise RuntimeError("WAF Bloqueó nuestra IP (403 Forbidden). Activando secuencia de autorrecuperación.")
+                
                 total_descargados = 0
                 pagina_actual = 1
+                paginas_totales = 1 # Valor por defecto
                 
-                while True:
-                    logger.info(f"--- Procesando Página {pagina_actual} ---")
+                # Obtener el total real de páginas parseando el texto del paginador
+                try:
+                    resumen_paginador = page.locator(".dxp-summary").first.inner_text()
+                    # Ejemplo de texto: "Página 1 de 127 (6311 Documentos)"
+                    match = re.search(r'de\s+(\d+)', resumen_paginador)
+                    if match:
+                        paginas_totales = int(match.group(1))
+                        logger.info(f"Se detectaron {paginas_totales} páginas en total en STIV.")
+                except Exception as e:
+                    logger.warning(f"No se pudo determinar el total de páginas: {e}")
+                
+                while pagina_actual <= paginas_totales:
+                    logger.info(f"--- Procesando Página {pagina_actual} de {paginas_totales} ---")
+                    
+                    # Evitar procesar la primera página si no es necesario (ya estamos ahí) o navegar
+                    if pagina_actual > 1:
+                        logger.info(f"Cambiando a la página {pagina_actual}...")
+                        # PN0 es página 1, PN1 es página 2
+                        # Ejecutar evento DevExpress
+                        page.evaluate(f"aspxGVPagerOnClick('ctl00_DefaultPlaceholder_TablaDocumentos', 'PN{pagina_actual - 1}')")
+                        
+                        # Espera inteligente y robusta para páginas lentas (DevExpress postbacks)
+                        page.wait_for_timeout(1000) # Breve pausa para asegurar que el loader aparezca
+                        
+                        # Esperar dinámicamente hasta 2 minutos a que el panel de carga desaparezca
+                        try:
+                            page.wait_for_selector(STIVSelectors.LOADING_PANEL, state="hidden", timeout=120000)
+                        except Exception as e:
+                            logger.warning(f"Timeout o problema al esperar el panel de carga: {e}")
+                            
+                        # Asegurarse de que la tabla esté visible de nuevo
+                        page.wait_for_selector(STIVSelectors.TABLA_RESULTADOS, state="visible", timeout=60000)
+                        page.wait_for_timeout(random.uniform(2000, 4000)) # Espera biológica post-carga
+                    
                     descargados = self._procesar_resultados_pagina(page)
                     total_descargados += descargados
                     
-                    # Anti-Blocking: Delay entre cambios de página
-                    time.sleep(random.uniform(4.0, 7.0))
-
-                    # Manejo de Paginación
-                    next_button = page.locator(STIVSelectors.BTN_SIGUIENTE).last
-                    
-                    if next_button.count() > 0 and "dxp-buttonDisabled" not in next_button.get_attribute("class"):
-                        logger.info(f"Cambiando a página {pagina_actual + 1}...")
-                        next_button.click()
-                        
-                        page.wait_for_timeout(3000) # Espera técnica para el postback
-                        page.wait_for_selector(STIVSelectors.TABLA_RESULTADOS, state="visible")
-                        pagina_actual += 1
-                    else:
-                        logger.info("Fin de la base de datos alcanzado.")
-                        break
+                    pagina_actual += 1
                         
             except Exception as e:
                 logger.critical(f"Fallo crítico en el pipeline de extracción: {e}")
+                raise e
                 
             finally:
                 logger.info(f"Extracción finalizada. Documentos totales: {total_descargados}")

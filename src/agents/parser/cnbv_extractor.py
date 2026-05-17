@@ -150,6 +150,9 @@ class CNBVExtractor:
                 r"(?:[IÍií]ndice\s+de\s+referencia|[Bb]enchmark|[Rr]eferencia\s+de\s+mercado)"
                 r"\s*:?\s*([^\n\.\(\)]{3,80})",
                 re.IGNORECASE),
+            "volatilidad_historica": re.compile(
+                r"Volatilidad\s+hist[oó]rica\s*:?\s*(-?[\d.,]+\s*%?)",
+                re.IGNORECASE),
         }
 
         # Patrones especificos para comisiones (multi-variante)
@@ -238,6 +241,33 @@ class CNBVExtractor:
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
 
+    # -------------------------------------------------------------------
+    # Metodos de analisis financiero para tesis
+    # -------------------------------------------------------------------
+    def _calculate_risk_level(self, var_str: Optional[str], vol_str: Optional[str]) -> Optional[int]:
+        """Calcula el nivel de riesgo (1-7) basado en estandares CNBV (CUFI).
+
+        Prioriza el VaR maximo autorizado para la clasificacion.
+        """
+        def parse_val(s: Optional[str]) -> Optional[float]:
+            if not s: return None
+            try:
+                return float(s.replace("%", "").replace(",", "."))
+            except: return None
+
+        val = parse_val(var_str) or parse_val(vol_str)
+        if val is None:
+            return None
+
+        # Umbrales tipicos de la CNBV para VaR diario (95% confianza)
+        if val <= 0.3: return 1   # Muy Bajo
+        if val <= 0.6: return 2   # Bajo
+        if val <= 1.1: return 3   # Bajo a Moderado
+        if val <= 1.6: return 4   # Moderado
+        if val <= 2.1: return 5   # Moderado a Alto
+        if val <= 4.0: return 6   # Alto
+        return 7                  # Muy Alto
+
     def _extract_from_text(self, text: str, pattern: re.Pattern) -> Optional[str]:
         """Extrae la primera coincidencia de un patron regex en texto."""
         match = pattern.search(text)
@@ -270,21 +300,13 @@ class CNBVExtractor:
     # EXTRACCION DE COMISIONES (Estructura de Costos)
     # -------------------------------------------------------------------
     def _extract_comisiones(self, blocks: List[Block]) -> Dict[str, Optional[str]]:
-        """Extrae comisiones usando estrategia dual: texto corrido + celdas de tabla.
-
-        Estrategia:
-            1. Buscar en tablas de "Estructura de Costos" / "Comisiones" usando
-               coordenadas de celdas para precision.
-            2. Fallback a busqueda por regex en texto de secciones.
-            3. Normalizacion final de valores porcentuales.
-        """
+        """Extrae comisiones usando estrategia dual: texto corrido + celdas de tabla."""
         result = {
             "comision_administracion_anual": None,
             "comision_desempeno": None,
             "gastos_totales_ter": None,
         }
 
-        # --- Fase 1: Busqueda en tablas estructuradas ---
         table_blocks = self._get_table_blocks(blocks)
         cost_table_keywords = [
             "estructura de costos", "comisiones", "gastos", "cuotas",
@@ -326,7 +348,6 @@ class CNBVExtractor:
                     if val:
                         result["gastos_totales_ter"] = _normalize_percentage(val)
 
-        # --- Fase 2: Busqueda en texto corrido (secciones) como fallback ---
         all_text = self._get_full_text(blocks)
 
         for field_key, patterns_list in self.comision_patterns.items():
@@ -337,63 +358,25 @@ class CNBVExtractor:
             }[field_key]
 
             if result[result_key] is not None:
-                continue  # Ya encontrado en tabla
+                continue
 
             for pattern in patterns_list:
                 match = pattern.search(all_text)
                 if match:
                     raw_value = match.group(1).strip()
-                    # Detectar "No cobra" / "N/A"
                     if re.match(r"(?:No|N/?A|Ninguna)", raw_value, re.IGNORECASE):
                         result[result_key] = "0.00%"
                     else:
                         result[result_key] = _normalize_percentage(raw_value)
                     break
 
-        # --- Fase 3: Busqueda refinada en tablas genéricas (ultimo recurso) ---
-        # Algunos documentos no tienen tabla especifica de costos; las comisiones
-        # aparecen como filas sueltas en cualquier tabla.
-        for field_key, patterns_list in self.comision_patterns.items():
-            result_key = {
-                "comision_admin": "comision_administracion_anual",
-                "comision_desempeno": "comision_desempeno",
-                "ter": "gastos_totales_ter",
-            }[field_key]
-
-            if result[result_key] is not None:
-                continue
-
-            for tblock in table_blocks:
-                cells = _parse_table_cells(tblock.text)
-                for (row, col), content in cells.items():
-                    for pattern in patterns_list:
-                        m = pattern.search(content)
-                        if m:
-                            result[result_key] = _normalize_percentage(m.group(1))
-                            break
-                    if result[result_key]:
-                        break
-                if result[result_key]:
-                    break
-
-        logger.debug(f"Comisiones extraidas: {result}")
         return result
 
     # -------------------------------------------------------------------
     # EXTRACCION DE RENDIMIENTOS HISTORICOS
     # -------------------------------------------------------------------
     def _extract_rendimientos(self, blocks: List[Block]) -> Dict[str, Any]:
-        """Extrae la tabla de rendimientos netos con diferenciacion Fondo vs Benchmark.
-
-        Estrategia de parsing por coordenadas de celdas:
-            1. Localizar la tabla que contiene "rendimientos netos" o "desempeno historico".
-            2. Parsear las celdas con _parse_table_cells.
-            3. Identificar la fila de encabezados (periodos: 1 mes, 3 meses, etc.).
-            4. Identificar la fila del Fondo y la fila del Benchmark.
-            5. Mapear los valores a los periodos correspondientes.
-
-        Fallback: busqueda por regex en texto corrido si no se encuentra tabla.
-        """
+        """Extrae la tabla de rendimientos netos con diferenciacion Fondo vs Benchmark."""
         rendimientos = {
             "periodos": {
                 "1_mes": None,
@@ -410,7 +393,6 @@ class CNBVExtractor:
             "fecha_corte": None,
         }
 
-        # Patrones para detectar encabezados de periodos
         period_identifiers = {
             "1_mes": re.compile(r"(?:1|un)\s*mes", re.IGNORECASE),
             "3_meses": re.compile(r"(?:3|tres)\s*meses", re.IGNORECASE),
@@ -418,16 +400,12 @@ class CNBVExtractor:
             "3_anios": re.compile(r"(?:3|tres)\s*a[nñ]os?|(?:36)\s*meses", re.IGNORECASE),
         }
 
-        # Patrones para identificar filas de fondo vs benchmark
         fund_row_keywords = re.compile(
             r"(?:fondo|serie|rendimiento\s+(?:del\s+)?fondo|neto|cartera)", re.IGNORECASE)
         benchmark_row_keywords = re.compile(
             r"(?:benchmark|[ií]ndice|referencia|comparativo|base)", re.IGNORECASE)
 
-        # --- Fase 1: Buscar en tablas estructuradas ---
         table_blocks = self._get_table_blocks(blocks)
-        rendimiento_table_found = False
-
         for tblock in table_blocks:
             content_lower = tblock.text.lower()
             is_rendimiento_table = any(kw in content_lower for kw in [
@@ -441,22 +419,15 @@ class CNBVExtractor:
             if not is_rendimiento_table:
                 continue
 
-            rendimiento_table_found = True
             cells = _parse_table_cells(tblock.text)
-
             if not cells:
                 continue
 
-            # Encontrar las filas maximas y columnas maximas
             max_row = max(r for r, c in cells.keys()) if cells else 0
             max_col = max(c for r, c in cells.keys()) if cells else 0
 
-            # --- Paso A: Mapear columnas a periodos ---
-            # Buscar en las primeras filas (tipicamente fila 1 o 2 son encabezados)
             col_to_period: Dict[int, str] = {}
-            header_rows = range(1, min(4, max_row + 1))  # Revisar primeras 3 filas
-
-            for row_idx in header_rows:
+            for row_idx in range(1, min(4, max_row + 1)):
                 for col_idx in range(1, max_col + 1):
                     cell_text = cells.get((row_idx, col_idx), "")
                     for period_key, period_re in period_identifiers.items():
@@ -464,11 +435,7 @@ class CNBVExtractor:
                             col_to_period[col_idx] = period_key
                             break
 
-            # --- Paso B: Identificar filas del Fondo y del Benchmark ---
-            fund_row = None
-            benchmark_row = None
-
-            # Determinar cuales filas son encabezados (contienen texto de periodos)
+            fund_row, benchmark_row = None, None
             header_row_set = set()
             for row_idx in range(1, max_row + 1):
                 for col_idx in range(1, max_col + 1):
@@ -479,9 +446,7 @@ class CNBVExtractor:
                             break
 
             for row_idx in range(1, max_row + 1):
-                if row_idx in header_row_set:
-                    continue  # Saltar filas de encabezado
-                # Revisar la primera celda de cada fila (tipicamente la etiqueta)
+                if row_idx in header_row_set: continue
                 for col_idx in range(1, min(3, max_col + 1)):
                     cell_text = cells.get((row_idx, col_idx), "")
                     if fund_row_keywords.search(cell_text) and fund_row is None:
@@ -489,139 +454,101 @@ class CNBVExtractor:
                     elif benchmark_row_keywords.search(cell_text) and benchmark_row is None:
                         benchmark_row = row_idx
 
-            # Heuristica: si no se encontraron etiquetas explicitas,
-            # asumir que la primera fila de datos es el fondo y la segunda el benchmark
-            if col_to_period and fund_row is None:
-                # Buscar filas con datos numericos puros (excluyendo encabezados)
-                numeric_rows = []
-                for r in range(1, max_row + 1):
-                    if r in header_row_set:
-                        continue  # No contar encabezados como filas numericas
-                    has_numeric = False
-                    for c in col_to_period.keys():
-                        val = cells.get((r, c), "")
-                        # Verificar que sea un valor numerico real (no "1 Mes")
-                        if re.match(r"^\s*-?[\d.,]+\s*%?\s*$", val):
-                            has_numeric = True
-                            break
-                    if has_numeric:
-                        numeric_rows.append(r)
-
-                if len(numeric_rows) >= 2:
-                    fund_row = numeric_rows[0]
-                    benchmark_row = numeric_rows[1]
-                elif len(numeric_rows) == 1:
-                    fund_row = numeric_rows[0]
-
-            # --- Paso C: Extraer valores ---
             if col_to_period:
                 for col_idx, period_key in col_to_period.items():
                     if fund_row is not None:
                         val = cells.get((fund_row, col_idx), "")
                         normalized = _normalize_percentage(val)
-                        if normalized:
-                            rendimientos["periodos"][period_key] = normalized
-
+                        if normalized: rendimientos["periodos"][period_key] = normalized
                     if benchmark_row is not None:
                         val = cells.get((benchmark_row, col_idx), "")
                         normalized = _normalize_percentage(val)
-                        if normalized:
-                            rendimientos["benchmark"][period_key] = normalized
+                        if normalized: rendimientos["benchmark"][period_key] = normalized
 
-            # Buscar fecha de corte dentro o cerca de la tabla
             fecha = self._extract_from_text(tblock.text, self.patterns["fecha_corte"])
-            if fecha:
-                rendimientos["fecha_corte"] = fecha
+            if fecha: rendimientos["fecha_corte"] = fecha
+            if any(v is not None for v in rendimientos["periodos"].values()): break
 
-            # Si encontramos tabla con datos, dejamos de buscar
-            if any(v is not None for v in rendimientos["periodos"].values()):
-                break
-
-        # --- Fase 2: Fallback - Busqueda por regex en texto corrido ---
         if not any(v is not None for v in rendimientos["periodos"].values()):
-            logger.debug("No se encontro tabla de rendimientos. Intentando extraccion por regex...")
             all_text = self._get_full_text(blocks)
-
             for period_key, patterns_list in self.rendimiento_patterns.items():
                 for pattern in patterns_list:
                     match = pattern.search(all_text)
                     if match:
-                        rendimientos["periodos"][period_key] = _normalize_percentage(
-                            match.group(1))
+                        rendimientos["periodos"][period_key] = _normalize_percentage(match.group(1))
                         break
 
-        # --- Fase 3: Busqueda de fecha de corte global ---
         if not rendimientos["fecha_corte"]:
             rendimientos["fecha_corte"] = self._find_in_blocks(blocks, "fecha_corte")
 
-        logger.debug(f"Rendimientos extraidos: {rendimientos}")
         return rendimientos
 
     # -------------------------------------------------------------------
     # EXTRACCION PRINCIPAL
     # -------------------------------------------------------------------
     def extract(self, file_path: str, url_stiv: str = "Desconocido") -> Dict[str, Any]:
-        """Procesa el PDF y retorna el JSON estructurado segun los requerimientos de tesis.
-
-        Args:
-            file_path: Ruta al archivo PDF, DOCX o TXT.
-            url_stiv: URL de origen del portal STIV para trazabilidad.
-
-        Returns:
-            Diccionario con la estructura:
-                metadata, fondo_serie, metricas_riesgo, estructura_costos,
-                rendimientos_historicos
-        """
+        """Procesa el PDF y retorna el JSON estructurado segun los requerimientos de tesis."""
         path = Path(file_path)
-        logger.info(f"Iniciando extraccion estructurada de: {path.name}")
+        blocks = extract_document(path)
+        if not blocks: return {"error": "Documento vacio"}
 
-        # 1. Obtener bloques estructurales
-        try:
-            blocks = extract_document(path)
-        except Exception as e:
-            logger.error(f"Error al procesar estructura del documento {file_path}: {e}")
-            return {"error": str(e)}
-
-        if not blocks:
-            logger.warning(f"No se obtuvieron bloques del documento: {path.name}")
-            return {"error": "Documento vacio o sin contenido extraible"}
-
-        # 2. Extraer comisiones (nueva logica robusta)
         comisiones = self._extract_comisiones(blocks)
-
-        # 3. Extraer rendimientos (nueva logica con coordenadas de celdas)
         rendimientos = self._extract_rendimientos(blocks)
+        var_max = _normalize_percentage(self._find_in_blocks(blocks, "var_max"))
+        vol_hist = _normalize_percentage(self._find_in_blocks(blocks, "volatilidad_historica"))
+        calif_riesgo = self._find_in_blocks(blocks, "calificacion_riesgo")
 
-        # 4. Mapeo a Entidades
+        # Determinar tipo de documento (Prospecto o DICI)
+        filename_upper = path.name.upper()
+        tipo_documento = "DICI" if "DICI" in filename_upper or "DOCUMENTO CLAVE" in filename_upper else "Prospecto"
+
+        # Inferir clave_pizarra y serie de manera robusta
+        pizarra_val = self._find_in_blocks(blocks, "clave_pizarra")
+        serie_val = self._find_in_blocks(blocks, "serie")
+
+        if not pizarra_val:
+            parts = path.name.split('_')
+            if len(parts) > 1 and len(parts[0]) <= 15:
+                pizarra_val = parts[0]
+            else:
+                first_word = re.split(r'[\s_\-\+]+', path.name)[0]
+                pizarra_val = first_word if len(first_word) <= 12 else "DESCONOCIDO"
+
+        if pizarra_val and " " in pizarra_val:
+            p_parts = pizarra_val.split(" ")
+            pizarra_val = p_parts[0]
+            if not serie_val:
+                serie_val = p_parts[1]
+
+        if not serie_val:
+            serie_val = "Unica"
+
         data = {
             "metadata": {
                 "hash_archivo": self._calculate_file_hash(path),
                 "url_stiv": url_stiv,
                 "nombre_archivo": path.name,
+                "tipo_documento": tipo_documento,
             },
             "fondo_serie": {
-                "clave_pizarra": self._find_in_blocks(blocks, "clave_pizarra"),
-                "serie_accionaria": self._find_in_blocks(blocks, "serie"),
+                "clave_pizarra": pizarra_val,
+                "serie_accionaria": serie_val,
                 "categoria": self._find_in_blocks(blocks, "categoria"),
                 "tipo_administracion": self._find_in_blocks(blocks, "tipo_admin"),
                 "benchmark_oficial": self._find_in_blocks(blocks, "benchmark_oficial"),
                 "horizonte_inversion": self._find_in_blocks(blocks, "horizonte"),
             },
             "metricas_riesgo": {
-                "var_maximo_autorizado": _normalize_percentage(
-                    self._find_in_blocks(blocks, "var_max")),
-                "var_promedio_observado": _normalize_percentage(
-                    self._find_in_blocks(blocks, "var_prom")),
-                "calificacion_crediticia": self._find_in_blocks(
-                    blocks, "calificacion_crediticia"),
-                "calificacion_riesgo_mercado": self._find_in_blocks(
-                    blocks, "calificacion_riesgo"),
+                "var_maximo_autorizado": var_max,
+                "var_promedio_observado": _normalize_percentage(self._find_in_blocks(blocks, "var_prom")),
+                "volatilidad_historica": vol_hist,
+                "calificacion_crediticia": self._find_in_blocks(blocks, "calificacion_crediticia"),
+                "calificacion_riesgo_mercado": calif_riesgo,
+                "nivel_riesgo_calculado": self._calculate_risk_level(var_max, vol_hist)
             },
             "estructura_costos": comisiones,
             "rendimientos_historicos": rendimientos,
         }
-
-        # Log de resultados
         ter = comisiones.get("gastos_totales_ter", "N/D")
         r12 = rendimientos["periodos"].get("12_meses", "N/D")
         logger.info(

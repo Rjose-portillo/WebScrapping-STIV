@@ -46,6 +46,11 @@ try:
 except ImportError:  # pragma: no cover
     docx = None  # type: ignore
 
+try:
+    import fitz  # PyMuPDF
+except ImportError:  # pragma: no cover
+    fitz = None  # type: ignore
+
 
 # ---------------------------------------------------------------------------
 # Configuración global
@@ -127,12 +132,27 @@ def horizontal_overlap(x0_a: float, x1_a: float, x0_b: float, x1_b: float) -> fl
 def detect_tables(page):
     """Detecta tablas en una página de PDF.
 
-    Primero intenta con líneas visibles. Si no encuentra resultados,
-    usa una estrategia basada en la distribución del texto.
+    Intenta primero con líneas visibles tradicionales.
+    Si no, intenta con la estrategia híbrida de precisión (texto vertical + líneas horiz).
+    Si falla, cae en la estrategia de puro texto.
     """
     tables = page.find_tables(table_settings=LINE_TABLE_SETTINGS)
     if tables:
         return tables
+        
+    hybrid_settings = {
+        "vertical_strategy": "text",
+        "horizontal_strategy": "lines",
+        "snap_tolerance": 4,
+        "intersection_tolerance": 3
+    }
+    try:
+        tables = page.find_tables(table_settings=hybrid_settings)
+        if tables:
+            return tables
+    except Exception:
+        pass
+        
     return page.find_tables(table_settings=TEXT_TABLE_SETTINGS)
 
 
@@ -451,7 +471,13 @@ def table_block(table, page, page_number: int, index: int) -> Block:
 
 
 def extract_pdf(pdf_path: Path) -> list[Block]:
-    """Procesa un PDF completo y devuelve la lista de bloques estructurados."""
+    """Procesa un PDF utilizando una estrategia híbrida de alta velocidad y precisión.
+    
+    1. Usa PyMuPDF (fitz) para pre-filtrar de forma instantánea las páginas candidatos
+       que contienen palabras clave de interés (comisiones, administración, rendimiento,
+       pizarra, serie). Las primeras 3 páginas se procesan siempre para no perder metadatos de cabecera.
+    2. Aplica pdfplumber únicamente en esas páginas con tolerancias geométricas optimizadas.
+    """
     if pdfplumber is None:
         raise RuntimeError(
             "pdfplumber no está instalado. Ejecuta: pip install pdfplumber"
@@ -459,9 +485,41 @@ def extract_pdf(pdf_path: Path) -> list[Block]:
 
     all_blocks: list[Block] = []
 
+    # Determinar páginas candidatas usando PyMuPDF (fitz) si está disponible
+    target_pages = None
+    if fitz is not None:
+        try:
+            doc = fitz.open(str(pdf_path))
+            total_pages = len(doc)
+            
+            # Si el documento es pequeño, procesamos todo
+            if total_pages <= 5:
+                target_pages = list(range(1, total_pages + 1))
+            else:
+                # Páginas 1, 2, 3 siempre se procesan por metadatos
+                target_pages = [1, 2, 3]
+                keywords = ["comision", "comisión", "administraci", "administración", "rendimiento", "ter", "gasto", "neto", "pizarra", "serie"]
+                for page_num in range(3, total_pages):
+                    text_space = doc[page_num].get_text("text").lower()
+                    if any(kw in text_space for kw in keywords):
+                        target_pages.append(page_num + 1) # 1-indexed para pdfplumber
+                # Asegurar orden y unicidad
+                target_pages = sorted(list(set(target_pages)))
+                logger.info(f"Filtro PyMuPDF: {pdf_path.name} reducido de {total_pages} a {len(target_pages)} páginas de interés para extracción de tesis.")
+            doc.close()
+        except Exception as e:
+            logger.warning(f"Error al pre-filtrar con PyMuPDF: {e}. Procesando todas las páginas.")
+
     with pdfplumber.open(str(pdf_path)) as pdf:
-        for page_number, page in enumerate(pdf.pages, start=1):
+        total_pdf_pages = len(pdf.pages)
+        # Si no pudimos pre-filtrar, procesar todo
+        pages_to_process = target_pages if target_pages else list(range(1, total_pdf_pages + 1))
+        
+        for page_number in pages_to_process:
+            if page_number > total_pdf_pages:
+                continue
             try:
+                page = pdf.pages[page_number - 1]
                 tables = detect_tables(page)
                 words = page.extract_words(
                     x_tolerance=1.5,

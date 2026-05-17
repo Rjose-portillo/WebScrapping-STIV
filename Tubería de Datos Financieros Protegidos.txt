@@ -1,0 +1,513 @@
+﻿Infraestructura de Extracción de Datos Financieros de Alta Escala: Superación de Mecanismos Antibots y Análisis Estructurado de Documentos
+La implementación de procesos de extracción automatizada de datos (web scraping) en portales gubernamentales y bancarios de alta seguridad exige un diseño de arquitectura robusto y resiliente. El desarrollo de una tubería de datos para la descarga y el análisis semántico de Prospectos de Información y Documentos de Información Clave para la Inversión (DICI) en México presenta retos complejos en la capa de red, en la gestión del estado de la aplicación y en el procesamiento geométrico de los documentos obtenidos.
+________________
+Clasificación Técnica de Cuellos de Botella, Bloqueos Lógicos y Mutaciones en Portales de Alta Seguridad
+La interacción automatizada con plataformas como el Sistema de Transferencia de Información de Valores (STIV) de la Comisión Nacional Bancaria y de Valores (CNBV) y el portal de HSBC México revela fallas estructurales que pueden ser categorizadas sistemáticamente en tres niveles de la pila tecnológica.
+1. Barreras a Nivel de Red y Protocolo
+Los firewalls de aplicación web (WAF) corporativos, como el Azure Application Gateway/v2 configurado en modo de prevención (Prevention Mode), actúan como proxies inversos que evalúan el tráfico entrante utilizando firmas del conjunto de reglas gestionadas de OWASP.1
+
+
+
+
+
+
+                                   
+                                           │
+                            ┌──────────────┴──────────────┐
+                            ▼                             ▼
+                [ Petición de Automatización ]     [ Petición Humana ]
+                 - JA4 No Estándar (Python)         - JA4 Estándar (Edge)
+                 - Intento de Upgrade h2c           - Conexión TLS Nativa
+                 - Reúso de ViewState Caduco        - Navegación Coherente
+                            │                             │
+                            ▼                             ▼
+                ┌───────────────────────────┐     ┌────────────────┐
+                │  Azure WAF / v2 (Prevent) │     │ Acceso Exitoso │
+                └───────────┬───────────────┘     └────────────────┘
+                            │
+                            ▼
+               
+
+Las fallas en este nivel se deben principalmente a:
+* Bloqueos por Falsos Positivos de Reglas OWASP: Cuando la tubería de datos envía peticiones de paginación que contienen estructuras complejas en el cuerpo de la solicitud POST o en los parámetros de la URL, el WAF puede identificar erróneamente estas cadenas como firmas de inyección SQL (SQLi) o de inclusión de archivos locales (LFI/RFI), denegando el acceso de forma inmediata con un código de estado HTTP 403 Forbidden.1
+* Rechazo de Upgrades de Protocolo (h2c): El Azure Application Gateway/v2 no soporta la actualización de protocolo en texto claro desde HTTP/1.1 a HTTP/2 (h2c) sobre oyentes HTTP.2 Los clientes HTTP automatizados mal configurados que intentan forzar esta optimización son bloqueados inmediatamente por las políticas del WAF, requiriendo conexiones nativas HTTPS seguras desde el inicio del protocolo de enlace.2
+* Perfilamiento por Reputación de Direcciones IP: Las solicitudes repetitivas que provienen de centros de datos (como AWS, Azure o DigitalOcean) son marcadas rápidamente debido a la reputación de su Sistema Autónomo (ASN), lo que desencadena políticas de bloqueo geográfico o de reputación de red.
+2. Bloqueos Lógicos en la Gestión de Estado y Frameworks Heredados
+El portal STIV de la CNBV utiliza la tecnología web heredada DevExpress de ASP.NET, la cual gestiona el estado del lado del servidor de forma síncrona y asíncrona mediante un motor de renderizado propietario.6
+* Estancamiento del ViewState en Llamadas Asíncronas (Callbacks): DevExpress emplea el parámetro oculto __VIEWSTATE y __EVENTVALIDATION para validar la integridad del formulario en cada interacción.7 Sin embargo, cuando la rejilla de datos (ASPxGridView) está configurada en modo de Callback (EnableCallBacks=true), las actualizaciones parciales de la página web no refrescan el campo __VIEWSTATE en el cliente de la misma forma que en un PostBack tradicional.7 Si el raspador realiza llamadas de paginación consecutivas basadas en PostBacks de formulario utilizando un ViewState desactualizado, el servidor IIS de la CNBV detectará una inconsistencia criptográfica y rechazará la petición con un error HTTP 500 o 505 indicando que el argumento de validación del evento no es válido.7
+* Estructura de Serialización Dinámica del Callback: El método de paginación aspxGVPagerOnClick realiza solicitudes POST asíncronas transmitiendo los valores de control a través de las variables __CALLBACKID y __CALLBACKPARAM.12 El parámetro __CALLBACKPARAM se rige por un esquema de serialización de longitud de prefijo estructurado bajo el formato:
+  
+Para emular estas solicitudes con HTTP directo, se debe calcular dinámicamente el tamaño de la cadena de acción.13 Si la página objetivo cambia a un número de dos o tres dígitos (por ejemplo, pasando de la página 9 a la 10, o de la 99 a la 100), el tamaño del índice varía y altera la longitud total del argumento serializado.13 Si no se recalculan estas variables con exactitud matemática, el servidor web ignora la petición o devuelve el estado de la primera página, deteniendo el flujo lógico de la extracción.13
+3. Inestabilidades del DOM y Pérdida de Enlace de Eventos
+En portales dinámicos modernos y basados en tecnologías SPA (Single Page Applications) como el de HSBC México, la renderización asíncrona genera cuellos de botella adicionales:
+   * Excepciones por Elementos Caducos (Stale Element Reference): Al interactuar con el menú desplegable para seleccionar las familias de fondos de inversión, el DOM del portal de HSBC destruye y reconstruye dinámicamente las filas de la tabla de series accionarias (como "HSBCBAL BFP"). Si el motor de automatización intenta acceder a un nodo del DOM que fue instanciado antes del renderizado asíncrono, la referencia queda huérfana y produce una excepción fatal que interrumpe la ejecución del script.
+   * Pérdida de Enlaces de Eventos Dinámicos: En arquitecturas híbridas donde se combinan bibliotecas como jQuery con componentes empaquetados, la inyección dinámica de elementos a través de operaciones como clonación o prepandado interrumpe la propagación de eventos y desvincula los controladores onclick originales.6 Esto provoca que las interacciones del raspador sobre los botones de paginación no disparen ninguna acción, requiriendo el uso de controladores delegados vinculados directamente al nodo raíz de la página.14
+________________
+Soluciones Avanzadas de Grado Corporativo para la Mitigación de Bloqueos
+Para garantizar una operación ininterrumpida a escala corporativa, la infraestructura de extracción de datos debe evolucionar hacia un enfoque híbrido que controle de manera precisa cada capa de identidad del cliente automatizado.
+1. Rotación Inteligente de Proxies Residenciales y Persistencia de Sesión
+La utilización de proxies residenciales distribuidos es indispensable para mitigar el bloqueo por reputación de ASN. Sin embargo, en portales de banca y gobierno que almacenan variables de estado en la sesión de IIS del lado del servidor, una rotación desordenada de direcciones IP por cada petición HTTP romperá la coherencia de la sesión web y provocará la invalidación del estado del ViewState, resultando en errores de autenticación o de postback.
+La solución de grado de producción consiste en implementar sesiones persistentes de proxy (Sticky Sessions). Al asociar un identificador único de sesión a la cabecera del proxy residencial, el proveedor de red garantiza que todas las solicitudes dirigidas a la CNBV durante un ciclo de paginación completo (las 127 páginas) sean ruteadas a través del mismo nodo IP residencial de salida. Esto permite mantener la coherencia geográfica de la dirección IP y la persistencia de las variables de estado temporales almacenadas en el backend del servidor de aplicaciones de la CNBV.
+2. Evasión de Firmas TLS a través de JA3 y JA4
+La inspección de paquetes en profundidad de los WAF modernos permite calcular la huella digital del protocolo de enlace TLS (TLS Handshake) del cliente.15 El algoritmo clásico JA3 y su evolución estándar JA4 recopilan las características específicas de la negociación criptográfica enviada en el paquete de saludo del cliente (Client Hello).16
+La estructura JA4 se compone de una cadena trifásica bajo la sintaxis    que desglosa detalladamente la identidad de red del cliente 16:
+   * Parte A (Metadatos): Define si la conexión utiliza TCP o QUIC, la versión exacta de TLS solicitada, la presencia de indicación del nombre del servidor (SNI), el número de suites de cifrado, la cantidad de extensiones y el protocolo ALPN de aplicación (generalmente h2 para HTTP/2 o h1 para HTTP/1.1).16
+   * Parte B (Cifrados): Almacena un hash SHA256 truncado a 12 caracteres correspondiente a la lista ordenada de suites de cifrado soportadas por el cliente.16
+   * Parte C (Extensiones y Algoritmos de Firma): Genera un hash SHA256 truncado de la lista ordenada de extensiones TLS y algoritmos de firma declarados.16
+
+
+
+
+
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Estructura JA4                                  │
+├────────────────────┬─────────────────────────────┬─────────────────────┤
+│      Parte A       │           Parte B           │       Parte C       │
+│    (Metadatos)     │          (Cifrados)         │    (Extensiones)    │
+│  t13d1516h2        │        8daaf6152771         │    e5627efa2ab1     │
+└────────────────────┴─────────────────────────────┴─────────────────────┘
+
+Si una tubería de datos utiliza el cliente HTTP estándar de Python (requests o urllib3), el WAF de Azure detectará que la suite de cifrado y el orden de las extensiones TLS corresponden a la biblioteca nativa OpenSSL.16 Esta huella de OpenSSL entra en contradicción inmediata con la cabecera User-Agent declarada (que simula ser un navegador Edge o Chrome de usuario final), lo que desencadena un bloqueo automático por inconsistencia criptográfica.18
+Para evadir esta firma, la tubería de datos debe emplear motores HTTP basados en implementaciones de C/Go (como BoringSSL o wolfSSL) empaquetados en Python, los cuales reorganizan el orden de los cifrados y las extensiones TLS, inyectando incluso parámetros GREASE de manera aleatoria para simular el comportamiento exacto de los motores de renderizado de navegadores comerciales como Chromium o Edge.16
+3. Rotación Completa de Huellas Digitales del Navegador (Canvas y WebGL)
+Cuando la WAF o el sistema de análisis de comportamiento del portal ejecutan JavaScript de manera activa en el navegador del cliente (Playwright), recopilan datos del hardware del sistema para construir una huella digital única:
+   * Canvas Fingerprinting: Se genera un renderizado oculto de texto y formas 2D. Las diferencias milimétricas en el suavizado de fuentes (anti-aliasing) y el procesamiento de color del hardware de gráficos producen un hash de imagen único del dispositivo de ejecución.
+   * WebGL Fingerprinting: Se extraen los metadatos de la tarjeta de video (proveedor y renderizador WebGL, como "Mesa" o "Intel Iris") y se ejecutan sombreadores (shaders) 3D para evaluar la precisión geométrica de la GPU.
+   * Inconsistencias del Objeto Navigator: Se evalúa la concordancia entre la resolución física de pantalla, el conteo de núcleos de CPU declared en navigator.hardwareConcurrency, el estado de las APIs de sensores del sistema y la ausencia del parámetro navigator.webdriver.
+La desactivación de la bandera AutomationControlled en Playwright es insuficiente para evadir WAFs avanzados de nivel bancario. Se requiere interceptar los métodos nativos de renderizado mediante la inyección preventiva de scripts de inicialización (add_init_script) en el contexto del navegador. Estos scripts deben enmascarar los contextos de dibujo de Canvas y WebGL añadiendo ruido pseudoaleatorio imperceptible en los canales de color, además de sobreescribir los metadatos de la GPU para simular tarjetas gráficas comerciales comunes de usuario final.
+4. Transferencia de Estado de Sesión entre Motores de Automatización y Clientes HTTP
+Mantener un navegador Playwright abierto durante miles de páginas consume recursos computacionales excesivos y reduce drásticamente la velocidad de extracción.17 La estrategia de grado corporativo implementa una arquitectura híbrida:
+
+
+
+
+
+
+ ──( Autenticación y Bypass )──►
+                                                              │
+                                                      ( Transferencia )
+                                                              │
+                                                              ▼
+◄──( Replay a Alta Velocidad )─────┘
+
+   1. Se inicializa un navegador Playwright de forma no-headless integrado con técnicas de evasión profunda para realizar la carga inicial del portal bancario o de gobierno.17
+   2. El navegador resuelve los desafíos dinámicos de JavaScript o WAF que requieren la ejecución completa de motores gráficos y espera la asignación de las cookies de sesión finales (ASP.NET_SessionId, tokens de WAF y balanceadores de carga).18
+   3. Se extraen las cookies obtenidas y la configuración del User-Agent utilizando las interfaces de contexto del navegador.21
+   4. Se transfieren estos parámetros a una sesión del cliente optimizado de bajo nivel (curl_cffi) que emula la firma TLS correspondiente al navegador original.18 A partir de este momento, las peticiones HTTP subsiguientes se ejecutan a través de este cliente ligero, logrando altas tasas de concurrencia sin el overhead computacional de un navegador completo.17
+________________
+Evaluación Comparativa de Librerías y Herramientas en Python
+Para estructurar una solución robusta orientada a la Ingeniería Matemática, las herramientas seleccionadas deben evaluarse de acuerdo con su velocidad, determinismo, consumo de recursos e idoneidad para el tratamiento matemático de la información.
+1. Evasión de Bots Avanzada
+   * playwright-stealth: Es una biblioteca útil para demostraciones de concepto que aplica inyecciones de código estático sobre el objeto navigator y los parámetros de visualización. Sin embargo, carece de actualización constante frente a las técnicas de detección de WAFs corporativos modernos, los cuales identifican fácilmente sus patrones de evasión estáticos.
+   * curl_cffi: Es la biblioteca más recomendada para la ejecución masiva de peticiones.17 Al envolver binarios optimizados de curl-impersonate, permite imitar de manera exacta las firmas TLS (JA3 y JA4) y las tramas de configuración HTTP/2 de navegadores reales.16 Su rendimiento es comparable al de clientes HTTP asíncronos nativos como aiohttp, pero con la robustez criptográfica necesaria para evadir cortafuegos empresariales.17
+2. Extracción de Datos Tabulares desde Documentos PDF
+Los prospectos de información y documentos DICI en México poseen formatos de maquetación altamente heterogéneos. En Ingeniería Matemática, es crucial mapear los datos tabulares como matrices ordenadas de elementos numéricos de alta precisión para su posterior procesamiento semántico y estadístico.
+
+
+Librería
+	Velocidad de Procesamiento
+	Precisión en Tablas sin Bordes
+	Control de Coordenadas y Geometría
+	Dependencias de Entorno
+	Idoneidad para Ingeniería Matemática
+	pdfplumber 25
+	Baja (procesamiento a nivel de carácter).27
+	Alta (mediante estrategias visuales y de alineación de texto).25
+	Excelente (permite acceso de precisión a coordenadas de cajas delimitadoras).25
+	Ninguna (código Python puro basado en pdfminer.six).27
+	Sobresaliente: Mapea con rigor geométrico la posición matricial de los elementos numéricos.25
+	Camelot 25
+	Media (basada en el procesamiento de tramas vectoriales).31
+	Baja (el modo Lattice falla de forma sistemática en tablas invisibles).25
+	Media (ajuste de parámetros geométricos globales).29
+	Requiere binarios externos de Ghostscript y librerías C.31
+	Media: Limitada por la dependencia de bordes vectoriales explícitos en el documento.25
+	tabula-py 25
+	Alta (ejecutada mediante el motor Java de Tabula).25
+	Media (heurísticas de espaciado eficaces).26
+	Baja (enfoque de caja negra para la extracción).25
+	Requiere Java Runtime Environment (JRE) instalado en el sistema.25
+	Aceptable: Adecuada para procesamiento masivo de formatos uniformes y predecibles.25
+	PyMuPDF 26
+	Extremadamente Alta (desarrollada nativamente en C++).26
+	No posee motor de reconstrucción tabular nativo de alto nivel.26
+	Excelente (proporciona bloques, líneas de texto y coordenadas precisas).26
+	Ninguna (binarios C precompilados en la distribución).27
+	Crítica como preprocesador: Permite categorizar y segmentar las páginas de interés antes del análisis geométrico pesado.26
+	Para un desarrollo estructurado bajo el paradigma de la Ingeniería Matemática, se propone una estrategia de extracción híbrida:
+   1. Filtro Clasificador de Contenido: Se utiliza PyMuPDF como un operador de proyección de baja latencia para analizar el documento completo y filtrar únicamente las páginas que contengan información relevante (por ejemplo, localizando cadenas como "comisiones" o "rendimiento").26 Esto optimiza la complejidad temporal global del pipeline, reduciéndola de un orden    (donde    es el total de páginas de la población de documentos) a un orden mucho menor   , procesando con algoritmos costosos únicamente las páginas objetivo.33
+   2. Extracción Geométrica Determinista: En las páginas preseleccionadas, se ejecuta pdfplumber para recuperar la estructura tabular utilizando análisis de coordenadas cartesianas de caracteres y espaciado.25 Esto permite tratar la información extraída como representaciones matriciales limpias listas para el análisis semántico y matemático.25
+3. Orquestación y Escalabilidad de la Tubería de Datos
+En proyectos de alta escala, el uso de herramientas de orquestación tradicionales basadas en tareas síncronas es ineficiente ante fallas dinámicas de red o bloqueos de WAF.
+      * Prefect: Es un orquestador moderno enfocado en la velocidad de desarrollo y el paradigma "Python-nativo", ideal para tuberías dinámicas con flujos de trabajo asíncronos y distribución ágil de tareas.34 Facilita la implementación de políticas dinámicas de reintentos (retries), gestión de colas paralelas y manejo persistente de fallas.35
+      * Dagster: Representa un salto cualitativo al centrar la orquestación en activos de datos declarativos (Software-Defined Assets) en lugar de tareas operativas aisladas.34 Permite definir contratos de datos robustos, trazar el linaje completo de la información desde el origen de la red hasta el almacenamiento final, y modelar de forma rigurosa las dependencias algebraicas de la tubería.34
+      * Celery: Integrado como el motor de ejecución distribuido de Dagster o Prefect, Celery gestiona el encolamiento asíncrono y la distribución de tareas a través de brokers de mensajería como Redis o RabbitMQ.36 Esto permite aislar los agentes de raspado en nodos de ejecución independientes, distribuyendo la carga de red y facilitando la rotación de identidades y direcciones IP a nivel de sistema de manera escalable y tolerante a fallas.36
+________________
+Implementación de la Tubería Híbrida: Código en Python de Grado Corporativo
+La siguiente sección presenta la arquitectura de software recomendada para resolver los bloqueos lógicos del portal CNBV STIV y de HSBC México, integrar la evasión de firmas TLS a través de curl_cffi, realizar la extracción precisa de tablas financieras con un pipeline híbrido (PyMuPDF + pdfplumber), y estructurar la orquestación con políticas tolerantes a fallas.
+1. Inicialización Stealth de Sesión y Extracción de Parámetros
+El primer bloque de la tubería utiliza Playwright para navegar el portal dinámico de HSBC México e interceptar de manera directa las respuestas de red, superando los bloqueos habituales de elementos caducos en el DOM.
+
+
+Python
+
+
+
+
+import asyncio
+import json
+from playwright.async_api import async_playwright
+
+class StealthSessionInitializer:
+   def __init__(self):
+       self.user_agent = (
+           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+           "AppleWebKit/537.36 (KHTML, like Gecko) "
+           "Chrome/131.0.0.0 Safari/537.36"
+       )
+       self.cookies = {}
+       self.headers = {}
+
+   async def warm_up_hsbc_session(self, url: str, target_family: str) -> list:
+       """Navega el portal dinámico de HSBC e intercepta la respuesta de red
+
+       de la API de series accionarias para evitar interacciones inestables con el DOM.
+       """
+       async with async_playwright() as p:
+           # Inicialización utilizando el navegador nativo Microsoft Edge
+           browser = await p.chromium.launch(
+               headless=False,
+               channel="msedge"
+           )
+           context = await browser.new_context(
+               user_agent=self.user_agent,
+               viewport={"width": 1920, "height": 1080}
+           )
+           
+           # Evasiones a nivel de JavaScript para ocultar el entorno de automatización
+           await context.add_init_script("""
+               Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+               window.chrome = { runtime: {} };
+               Object.defineProperty(navigator, 'plugins', { get: () =>  });
+           """)
+           
+           page = await context.new_page()
+           
+           # Captura de eventos de red para interceptar las respuestas de la API
+           intercepted_series_data =
+           def handle_response(response):
+               if "getSeries" in response.url or "fundSeries" in response.url:
+                   try:
+                       asyncio.create_task(save_api_data(response))
+                   except Exception:
+                       pass
+
+           async def save_api_data(response):
+               text = await response.text()
+               intercepted_series_data.append(json.loads(text))
+
+           page.on("response", handle_response)
+           
+           await page.goto(url, wait_until="networkidle")
+           
+           # Interacción con el dropdown dynamic usando selectores de atributos estables
+           dropdown = page.locator("select#family-funds")
+           await dropdown.wait_for(state="visible", timeout=15000)
+           await dropdown.select_option(value=target_family)
+           
+           # Espera activa para permitir la resolución asíncrona de los datos de red
+           await page.wait_for_load_state("networkidle")
+           await asyncio.sleep(2)
+           
+           # Almacenamiento del estado de la sesión para transferirlo al cliente HTTP
+           playwright_cookies = await context.cookies()
+           self.cookies = {c['name']: c['value'] for c in playwright_cookies}
+           
+           await browser.close()
+           return intercepted_series_data
+
+   async def extract_cnbv_form_state(self, url: str) -> dict:
+       """Inicializa la sesión en el portal de la CNBV, resolviendo desafíos iniciales
+
+       del WAF de Azure, y extrae los campos criptográficos del ViewState.
+       """
+       async with async_playwright() as p:
+           browser = await p.chromium.launch(headless=False, channel="msedge")
+           context = await browser.new_context(user_agent=self.user_agent)
+           
+           await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+           page = await context.new_page()
+           
+           await page.goto(url, wait_until="networkidle")
+           
+           # Extracción limpia de campos requeridos por el motor de Web Forms de ASP.NET
+           viewstate = await page.locator("id=__VIEWSTATE").get_attribute("value")
+           event_validation = await page.locator("id=__EVENTVALIDATION").get_attribute("value")
+           viewstate_generator = await page.locator("id=__VIEWSTATEGENERATOR").get_attribute("value")
+           
+           # Extracción del valor de validación de clave único de DevExpress
+           devexpress_kv = await page.locator("id=ctl00_ContentPlaceHolder1_gvList_DXKVInput").get_attribute("value")
+           
+           playwright_cookies = await context.cookies()
+           self.cookies = {c['name']: c['value'] for c in playwright_cookies}
+           
+           await browser.close()
+           return {
+               "__VIEWSTATE": viewstate,
+               "__EVENTVALIDATION": event_validation,
+               "__VIEWSTATEGENERATOR": viewstate_generator,
+               "DXKV": devexpress_kv
+           }
+
+2. Bypass de Paginación DevExpress por Cálculo de Prefijo de Longitud
+Este componente emula las llamadas asíncronas de DevExpress utilizando la firma TLS de curl_cffi, superando el problema de desactualización del ViewState mediante el cálculo exacto de la longitud del parámetro del Callback.
+
+
+Python
+
+
+
+
+from curl_cffi import requests as cffi_requests
+
+class DevExpressBypasser:
+   def __init__(self, base_url: str, cookies: dict, user_agent: str):
+       self.base_url = base_url
+       self.cookies = cookies
+       self.user_agent = user_agent
+
+   def calculate_callback_parameter(self, kv_value: str, target_page: int) -> str:
+       """Calcula dinámicamente la serialización del parámetro __CALLBACKPARAM
+
+       según la longitud del índice de página para evitar rechazos del servidor de la CNBV.
+       """
+       # El índice interno de página de DevExpress es de base cero
+       i = target_page - 1
+       pn_str = f"PN{i}"
+       
+       # Fórmula matemática de longitud para serialización DevExpress:
+       # Longitud = len("12|PAGERONCLICK") + len(str(len(pn_str))) + len("|") + len(pn_str)
+       # Lo que resulta en la estructura: 12|PAGERONCLICK{N}|PN{i}
+       pager_onclick_len = len(pn_str)
+       action_str = f"12|PAGERONCLICK{pager_onclick_len}|{pn_str}"
+       total_len = len(action_str)
+       
+       # Construcción final del parámetro serializado estructurado con sus prefijos de longitud
+       callback_param = f"c0:KV|{len(kv_value)};{kv_value};GB|{total_len};{action_str};"
+       return callback_param
+
+   def fetch_page_data(self, state_fields: dict, target_page: int) -> str:
+       """Realiza una petición POST de alta velocidad simulando la firma de Chrome 131
+
+       para evadir el control del WAF de Azure v2.
+       """
+       callback_param = self.calculate_callback_parameter(
+           kv_value=state_fields,
+           target_page=target_page
+       )
+       
+       payload = {
+           "__VIEWSTATE": state_fields,
+           "__EVENTVALIDATION": state_fields,
+           "__VIEWSTATEGENERATOR": state_fields,
+           "__CALLBACKID": "ctl00$ContentPlaceHolder1$gvList", # Selector de la rejilla CNBV
+           "__CALLBACKPARAM": callback_param
+       }
+       
+       # Petición a nivel de protocolo de red utilizando impersonate de curl_cffi
+       response = cffi_requests.post(
+           self.url=self.base_url,
+           headers={
+               "User-Agent": self.user_agent,
+               "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+               "X-Requested-With": "XMLHttpRequest"
+           },
+           cookies=self.cookies,
+           data=payload,
+           impersonate="chrome131"  # Emulación criptográfica nativa de la firma JA4
+       )
+       
+       if response.status_code == 403:
+           raise PermissionError("Bloqueo del cortafuegos WAF de Azure de nivel 403 detectado.")
+           
+       return response.text
+
+3. Pipeline de Extracción Híbrido: PyMuPDF + pdfplumber
+Este script optimiza computacionalmente la extracción de tablas financieras complejas, detectando en primer lugar las páginas relevantes mediante PyMuPDF para luego aplicar el análisis geométrico preciso de pdfplumber.
+
+
+Python
+
+
+
+
+import fitz  # PyMuPDF
+import pdfplumber
+import pandas as pd
+
+class HighPrecisionPDFExtractor:
+   def __init__(self, pdf_path: str):
+       self.pdf_path = pdf_path
+
+   def classify_and_filter_target_pages(self) -> list[int]:
+       """Aplica un operador de proyección de baja latencia para identificar
+
+       páginas con alta densidad semántica de datos de interés financiero.
+       """
+       doc = fitz.open(self.pdf_path)
+       candidate_pages =
+       
+       for page_num, page in enumerate(doc):
+           text_space = page.get_text("text").lower()
+           
+           # Evaluación heurística de palabras clave de alto interés
+           if "comisiones" in text_space or "administración" in text_space or "rendimiento" in text_space:
+               candidate_pages.append(page_num)
+               
+       doc.close()
+       return candidate_pages
+
+   def extract_structured_tables(self, target_pages: list[int]) -> list:
+       """Extrae de manera determinista tablas sin bordes utilizando geometría de coordenadas
+
+       en las páginas seleccionadas.
+       """
+       extracted_tables =
+       
+       with pdfplumber.open(self.pdf_path) as pdf:
+           for page_index in target_pages:
+               page = pdf.pages[page_index]
+               
+               # Configuración explícita de tolerancia geométrica para estructurar celdas invisibles
+               table_settings = {
+                   "vertical_strategy": "text",     # Alineación basada en la proyección del texto
+                   "horizontal_strategy": "lines",   # Detección basada en líneas vectoriales del documento
+                   "snap_tolerance": 4,             # Conexión de caracteres con distancias de píxel reducidas
+                   "intersection_tolerance": 3       # Tolerancia de solape de cajas de texto
+               }
+               
+               tables = page.extract_tables(table_settings)
+               for table in tables:
+                   df = pd.DataFrame(table)
+                   # Limpieza preliminar y mapeo matricial
+                   if not df.empty and df.shape > 1:
+                       # Eliminación de filas nulas residuales en la extracción
+                       df = df.dropna(how='all')
+                       extracted_tables.append(df)
+                       
+       return extracted_tables
+
+4. Orquestación Declarativa de Tuberías con Prefect
+El siguiente bloque integra la orquestación asíncrona del pipeline, incorporando políticas de jitter y enfriamiento de IP frente a posibles detecciones del WAF.
+
+
+Python
+
+
+
+
+import random
+from prefect import flow, task
+
+@task(retries=3, retry_delay_seconds=300)
+def warm_up_network_credentials(url: str, target: str) -> dict:
+   """Tarea encargada del warm-up del portal y la resolución del desafío inicial."""
+   initializer = StealthSessionInitializer()
+   # Se simula jitter para evitar marcas de patrones fijos
+   time_delay = random.uniform(2.0, 5.0)
+   asyncio.run(asyncio.sleep(time_delay))
+   
+   if "cnbv" in url:
+       return asyncio.run(initializer.extract_cnbv_form_state(url))
+   else:
+       return asyncio.run(initializer.warm_up_hsbc_session(url, target))
+
+@task(retries=5, retry_delay_seconds=300)
+def download_documents_via_cffi(url: str, state_fields: dict, target_page: int) -> str:
+   """Descarga de forma asíncrona los datos evadiendo bloqueos dinámicos del WAF."""
+   user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+   bypasser = DevExpressBypasser(base_url=url, cookies={}, user_agent=user_agent)
+   
+   # Simulación de intervalos biológicos entre descargas masivas
+   jitter_delay = random.uniform(4.0, 10.0)
+   time.sleep(jitter_delay)
+   
+   return bypasser.fetch_page_data(state_fields, target_page)
+
+@flow(name="High_Scale_Financial_Data_Pipeline")
+def run_financial_pipeline(cnbv_url: str):
+   """Orquestación del flujo de trabajo continuo."""
+   # Fase 1: Extracción de credenciales de red y ViewState
+   state = warm_up_network_credentials(cnbv_url, target="STIV")
+   
+   # Fase 2: Paginación masiva de alta velocidad
+   for page in range(1, 128):
+       html_content = download_documents_via_cffi(cnbv_url, state, page)
+       # Lógica adicional para guardar el contenido y procesar los PDFs resultantes
+
+________________
+Conclusiones Técnicas y Recomendaciones Estratégicas
+La descarga masiva y el análisis semántico de miles de documentos PDF de fondos de inversión en portales de alta protección requiere un diseño de arquitectura guiado por principios de resiliencia y precisión algorítmica.
+
+
+
+
+
+
+                  ┌─────────────────────────────┐
+                 │ Tesis de Ingeniería Matemática│
+                 └──────────────┬──────────────┘
+                                ▼
+                    ┌──────────────────────┐
+                    │ Arquitectura Híbrida │
+                    └───────────┬──────────┘
+                                ▼
+                ┌──────────────────────────────┐
+                │  - Red: curl_cffi (JA4)      │
+                │  - DOM: Intercepción API     │
+                │  - PDF: PyMuPDF + pdfplumber │
+                └──────────────────────────────┘
+
+      1. Dejar de depender exclusivamente de la automatización completa de navegadores en Playwright: Se debe usar un enfoque híbrido para el scraping a gran escala.17 Emplear Playwright únicamente para iniciar la sesión, resolver los desafíos criptográficos iniciales del WAF y extraer las cookies correspondientes.18 Posteriormente, se debe transferir este estado a un cliente asíncrono ligero como curl_cffi que emule de manera exacta las firmas JA4 del navegador de inicio.18
+      2. Modelar geométricamente las transformaciones de las coordenadas en los PDFs: En lugar de delegar el análisis de las tablas a herramientas de detección ciegas u OCRs pesados (que incrementan el tiempo de cómputo de forma masiva), se debe proyectar la estructura de la tabla analizando las distancias euclidianas entre las cajas delimitadoras de los caracteres utilizando pdfplumber.25 Esto reduce los errores de redondeo de comisiones y desalineaciones de rendimiento a un porcentaje inferior al 1% en documentos con capas de texto legibles.28
+      3. Filtrar el volumen documental de manera inteligente: Integrar un preprocesador liviano en C con bindings de Python (como PyMuPDF) que analice las matrices de texto de los prospectos de información grandes (50-150 páginas) en milisegundos.26 Esto permite descartar páginas sin contenido tabular relevante antes de ejecutar los algoritmos geométricos de extracción en pdfplumber, garantizando la eficiencia temporal de la tubería de datos para la tesis de Ingeniería Matemática.25
+Fuentes citadas
+      1. 403 Forbidden Microsoft Azure Application Gateway v2: What Does It Mean (and How To Fix)? - Argano, acceso: mayo 17, 2026, https://argano.com/insights/articles/microsoft-403-forbidden-microsoft-azure-application-gateway-v2-what-does-it-mean-and-how-to-fix.html
+      2. HTTP response codes - Azure Application Gateway - Microsoft Learn, acceso: mayo 17, 2026, https://learn.microsoft.com/en-us/troubleshoot/azure/application-gateway/http-response-codes
+      3. Facing App gateway errors - Microsoft Q&A, acceso: mayo 17, 2026, https://learn.microsoft.com/en-sg/answers/questions/5550509/facing-app-gateway-errors
+      4. Troubleshoot Web Application Firewall (WAF) for Azure Application Gateway, acceso: mayo 17, 2026, https://learn.microsoft.com/en-us/troubleshoot/azure/web-application-firewall/web-application-firewall-troubleshoot
+      5. Link is throwing 403 – Forbidden - Microsoft Q&A, acceso: mayo 17, 2026, https://learn.microsoft.com/en-ca/answers/questions/789145/link-is-throwing-403-forbidden
+      6. aspxGVPagerOnClick does not fire consistently - DevExpress Support, acceso: mayo 17, 2026, https://supportcenter.devexpress.com/ticket/details/b131375/aspxgvpageronclick-does-not-fire-consistently
+      7. How to persist a callback date to ViewState when the ASPxGridView.EnableCallBacks property is set to true | DevExpress Support, acceso: mayo 17, 2026, https://supportcenter.devexpress.com/ticket/details/q536088/how-to-persist-a-callback-date-to-viewstate-when-the-aspxgridview-enablecallbacks
+      8. Process Custom Callbacks | ASP.NET Web Forms Controls - DevExpress Documentation, acceso: mayo 17, 2026, https://docs.devexpress.com/AspNet/5348/components/grid-view/concepts/edit-data/processing-custom-callbacks
+      9. How do I get '__VIEWSTATE' and '__EVENTVALIDATION' on an asp.net page using python, acceso: mayo 17, 2026, https://stackoverflow.com/questions/46800437/how-do-i-get-viewstate-and-eventvalidation-on-an-asp-net-page-using-pyth
+      10. How to modify ViewState on Callbacks - DevExpress Support, acceso: mayo 17, 2026, https://supportcenter.devexpress.com/ticket/details/q505730/how-to-modify-viewstate-on-callbacks
+      11. EVENTVALIDATION error while scraping asp.net page - Stack Overflow, acceso: mayo 17, 2026, https://stackoverflow.com/questions/11030460/eventvalidation-error-while-scraping-asp-net-page
+      12. Update Panel Replacement - ASP.NET AJAX Callback Panel Control Demo | DevExpress, acceso: mayo 17, 2026, https://demos.devexpress.com/aspxmultiusecontrolsdemos/CallbackPanel/Example.aspx
+      13. Updating callback parameters for sending post requests to a site - Stack Overflow, acceso: mayo 17, 2026, https://stackoverflow.com/questions/78682941/updating-callback-parameters-for-sending-post-requests-to-a-site
+      14. Jquery handler called only once - Stack Overflow, acceso: mayo 17, 2026, https://stackoverflow.com/questions/49980294/jquery-handler-called-only-once
+      15. Exploring Python Libraries: tls_client vs curl_cffi for Web Requests | by Dima Kynal | Medium, acceso: mayo 17, 2026, https://medium.com/@dimakynal/exploring-python-libraries-tls-client-vs-curl-cffi-for-web-requests-129b7888e1f6
+      16. JA3/JA4 TLS Fingerprint - Detect Browser TLS/SSL Fingerprinting - Scrapfly, acceso: mayo 17, 2026, https://scrapfly.io/web-scraping-tools/ja3-fingerprint?algo=ja4
+      17. Requests vs curl_cffi vs Playwright: Which Network Stack Actually Fits Your Data Collection Workflow? - DEV Community, acceso: mayo 17, 2026, https://dev.to/ellebanna/requests-vs-curlcffi-vs-playwright-which-network-stack-actually-fits-your-data-collection-3o69
+      18. Cloudflare Challenges, need help plsssssssss : r/webscraping - Reddit, acceso: mayo 17, 2026, https://www.reddit.com/r/webscraping/comments/1r1emqe/cloudflare_challenges_need_help_plsssssssss/
+      19. GitHub - lexiforest/curl_cffi: Python binding for curl-impersonate fork via cffi. A http client that can impersonate browser tls/ja3/http2 fingerprints., acceso: mayo 17, 2026, https://github.com/lexiforest/curl_cffi
+      20. 0x676e67/wreq-python: An ergonomic Python HTTP Client with TLS fingerprint - GitHub, acceso: mayo 17, 2026, https://github.com/0x676e67/wreq-python
+      21. How to save and load cookies in Playwright? - ScrapingBee, acceso: mayo 17, 2026, https://www.scrapingbee.com/webscraping-questions/playwright/how-to-save-and-load-cookies-in-playwright/
+      22. How to save and load cookies in Playwright? - Scrapfly Blog, acceso: mayo 17, 2026, https://scrapfly.io/blog/answers/how-to-save-and-load-cookies-in-playwright
+      23. Scraping Solution with curl_cffi stopped working. What's next? : r/webscraping - Reddit, acceso: mayo 17, 2026, https://www.reddit.com/r/webscraping/comments/1s7tpez/scraping_solution_with_curl_cffi_stopped_working/
+      24. Web Scraping With curl_cffi and Python in 2026 - Bright Data, acceso: mayo 17, 2026, https://brightdata.com/blog/web-data/web-scraping-with-curl-cffi
+      25. Python PDF Table Extraction: pdfplumber vs Camelot vs Tabula, acceso: mayo 17, 2026, https://invoicedataextraction.com/blog/python-pdf-table-extraction-invoices
+      26. Technical Comparison — Python Libraries for Document Parsing | by chenna - Medium, acceso: mayo 17, 2026, https://medium.com/@hchenna/technical-comparison-python-libraries-for-document-parsing-318d2c89c44e
+      27. Python PDF library comparison (2026): 7 libraries for developers - Nutrient, acceso: mayo 17, 2026, https://www.nutrient.io/blog/best-python-pdf-libraries/
+      28. Guide to Extracting Data from PDFs - Docsumo, acceso: mayo 17, 2026, https://www.docsumo.com/blog/extracting-data-from-pdfs
+      29. A Comparative Study of PDF Parsing Tools Across Diverse Document Categories - arXiv, acceso: mayo 17, 2026, https://arxiv.org/html/2410.09871v1
+      30. Camelot: PDF Table Extraction for Humans — Camelot 1.0.9 documentation, acceso: mayo 17, 2026, https://camelot-py.readthedocs.io/
+      31. Comparing 6 Frameworks for Rule-based PDF parsing - AI Bites, acceso: mayo 17, 2026, https://www.ai-bites.net/comparing-6-frameworks-for-rule-based-pdf-parsing/
+      32. GitHub - conjuncts/pypdf_table_extraction: A Python library to extract tabular data from PDFs, acceso: mayo 17, 2026, https://github.com/conjuncts/pypdf_table_extraction
+      33. Best Python approach for extracting structured financial data from ..., acceso: mayo 17, 2026, https://www.reddit.com/r/Python/comments/1ru90rt/best_python_approach_for_extracting_structured/
+      34. Data Pipeline Orchestration Tools: Top 6 Solutions in 2026 - Dagster, acceso: mayo 17, 2026, https://dagster.io/learn/data-pipeline-orchestration-tools
+      35. Orchestrating Our Way Out of Chaos: How I Compared Airflow, Prefect, and Dagster (and Picked What to Ship) - DEV Community, acceso: mayo 17, 2026, https://dev.to/isha_vason/orchestrating-our-way-out-of-chaos-how-i-compared-airflow-prefect-and-dagster-and-picked-what-23np
+      36. Designing Scalable Multi-Tenant Data Pipelines with Dagster's Declarative Orchestration - Research Blog | RBC Borealis, acceso: mayo 17, 2026, https://rbcborealis.com/research-blogs/designing-scalable-multi-tenant-data-pipelines-with-dagsters-declarative-orchestration/
+      37. Dagster & Celery: Mastering Data Orchestration | Orchestra, acceso: mayo 17, 2026, https://www.getorchestra.io/guides/dagster-celery-mastering-data-orchestration
+      38. Dagster Open Source Pipelines | Integrating with Celery for Enhanced Workflow Orchestration | Orchestra, acceso: mayo 17, 2026, https://www.getorchestra.io/guides/dagster-open-source-pipelines-integrating-with-celery-for-enhanced-workflow-orchestration

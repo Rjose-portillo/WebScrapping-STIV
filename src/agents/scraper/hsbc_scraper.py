@@ -162,10 +162,21 @@ class HSBCScraper:
     def extraer(self) -> None:
         """Método principal para orquestar la extracción de HSBC."""
         with sync_playwright() as p:
-            # Headless false para que el usuario vea la magia (o True para prod)
-            browser = p.chromium.launch(headless=False)
-            context = browser.new_context(accept_downloads=True)
-            page = context.new_page()
+            # Evasión Antidetect para mantener consistencia y evitar timeouts
+            browser = p.chromium.launch(
+                headless=False,
+                channel="msedge",
+                args=["--disable-blink-features=AutomationControlled"]
+            )
+            context = browser.new_context(
+                accept_downloads=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
+            )
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            """)
             
             try:
                 self.retry_strategy.execute(self._navegar, page)

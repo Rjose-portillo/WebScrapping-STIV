@@ -1,18 +1,68 @@
+"""STIV (CNBV) document scraper with Azure WAF evasion and DevExpress pagination.
+
+Downloads Prospectos and DICIs from the CNBV document registry.
+Implements anti-detection patterns against Azure Web Application Firewall.
+"""
+
 import os
 import logging
 import re
 import time
 import random
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import pandas as pd
-from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import (
+    sync_playwright,
+    Page,
+    Browser,
+    BrowserContext,
+    TimeoutError as PlaywrightTimeoutError,
+)
 
 from src.agents.scraper.retry_strategy import RetryStrategy
 from config.selectors import STIVSelectors
 
 logger = logging.getLogger(__name__)
+
+# --- Anti-WAF configuration ---
+_USER_AGENTS: List[str] = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.2478.80",
+]
+
+_STEALTH_INIT_SCRIPT: str = """
+    // Hide webdriver flag
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    // Mimic Chrome runtime
+    window.chrome = { runtime: {}, csi: function(){}, loadTimes: function(){} };
+    // Realistic plugin array
+    Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5]
+    });
+    // Fake language and platform
+    Object.defineProperty(navigator, 'languages', {
+        get: () => ['es-MX', 'es', 'en-US', 'en']
+    });
+    Object.defineProperty(navigator, 'platform', {
+        get: () => 'Win32'
+    });
+    // Disable permissions query for notifications
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) =>
+        parameters.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission })
+            : originalQuery(parameters);
+"""
+
+# DevExpress pagination wait settings
+_DXP_LOADING_VISIBLE_TIMEOUT_MS: int = 3000
+_DXP_LOADING_HIDDEN_TIMEOUT_MS: int = 120000
+_DXP_PAGE_CHANGE_POLL_ATTEMPTS: int = 40
+_DXP_PAGE_CHANGE_POLL_INTERVAL_MS: int = 500
 
 class STIVScraper:
     """
@@ -20,7 +70,7 @@ class STIVScraper:
     Automatiza la navegación, filtrado y descarga de prospectos financieros.
     """
     
-    def __init__(self, url: str, download_dir: str, manifest_path: str):
+    def __init__(self, url: str, download_dir: str, manifest_path: str) -> None:
         """
         Inicializa el scraper con rutas de almacenamiento y configuración.
         
@@ -29,10 +79,10 @@ class STIVScraper:
             download_dir: Directorio base para descargas.
             manifest_path: Ruta al archivo CSV de seguimiento.
         """
-        self.url = url
-        self.download_dir = download_dir
-        self.manifest_path = manifest_path
-        self.retry_strategy = RetryStrategy(max_retries=3, backoff_factor=2.0)
+        self.url: str = url
+        self.download_dir: str = download_dir
+        self.manifest_path: str = manifest_path
+        self.retry_strategy: RetryStrategy = RetryStrategy(max_retries=3, backoff_factor=2.0)
         
         # Data Governance: Asegurar infraestructura de datos (Archivos)
         os.makedirs(self.download_dir, exist_ok=True)
@@ -42,7 +92,7 @@ class STIVScraper:
     def _init_manifest(self) -> None:
         """Inicializa el archivo manifest si no existe."""
         if not os.path.exists(self.manifest_path):
-            columns = [
+            columns: List[str] = [
                 'fecha_consulta', 'pizarra', 'tipo_documento', 'fecha_documento',
                 'version', 'archivo_destino', 'estado'
             ]
@@ -52,8 +102,13 @@ class STIVScraper:
     def _navegar_a_busqueda(self, page: Page) -> None:
         """Navega al portal principal y espera a que la tabla se cargue."""
         logger.info(f"Navegando al portal: {self.url}")
-        page.goto(self.url, wait_until="networkidle")
+        # Pre-navigation jitter to avoid rate-limit fingerprinting
+        time.sleep(random.uniform(2.0, 4.0))
+        page.goto(self.url, wait_until="networkidle", timeout=90000)
+        # Extra wait for DevExpress JS initialization
+        page.wait_for_timeout(random.randint(2000, 4000))
         page.wait_for_selector(STIVSelectors.TABLA_RESULTADOS, state="visible", timeout=60000)
+        logger.info("STIV: Tabla de resultados visible y lista.")
 
     def _limpiar_nombre(self, texto: str, max_len: int = 100) -> str:
         """Sanitiza strings para su uso como nombres de archivos o carpetas."""
@@ -68,22 +123,22 @@ class STIVScraper:
             int: Número de documentos descargados con éxito en la página.
         """
         filas = page.locator(STIVSelectors.FILAS_RESULTADOS)
-        num_registros = filas.count()
+        num_registros: int = filas.count()
         logger.info(f"Procesando {num_registros} registros en la página actual.")
         
-        manifest_records = []
-        descargados_en_pagina = 0
+        manifest_records: List[Dict[str, Any]] = []
+        descargados_en_pagina: int = 0
         
-        consecutive_errors = 0
+        consecutive_errors: int = 0
         for i in range(num_registros):
             fila = filas.nth(i)
             try:
                 # 1. Extracción de Metadatos
-                denominacion = fila.locator(STIVSelectors.COL_DENOMINACION).inner_text().strip()
-                pizarra_actual = fila.locator(STIVSelectors.COL_PIZARRA).inner_text().strip()
-                tipo_doc = fila.locator(STIVSelectors.COL_TIPO_DOC).inner_text().strip()
-                fecha_doc = fila.locator(STIVSelectors.COL_FECHA).inner_text().strip()
-                version = fila.locator(STIVSelectors.COL_VERSION).inner_text().strip()
+                denominacion: str = fila.locator(STIVSelectors.COL_DENOMINACION).inner_text().strip()
+                pizarra_actual: str = fila.locator(STIVSelectors.COL_PIZARRA).inner_text().strip()
+                tipo_doc: str = fila.locator(STIVSelectors.COL_TIPO_DOC).inner_text().strip()
+                fecha_doc: str = fila.locator(STIVSelectors.COL_FECHA).inner_text().strip()
+                version: str = fila.locator(STIVSelectors.COL_VERSION).inner_text().strip()
 
                 # 2. Validación: "Prospecto" o "DICI" (Documento Clave)
                 tipo_doc_upper = tipo_doc.upper()
@@ -111,8 +166,9 @@ class STIVScraper:
                     consecutive_errors = 0
                     continue
                 
-                # 4. Descarga con Anti-Blocking Delay (un poco más largo para evitar bloqueos)
-                time.sleep(random.uniform(2.5, 4.5))
+                # 4. Descarga con Anti-Blocking Delay (randomized with jitter)
+                delay: float = random.uniform(3.0, 6.0) + random.expovariate(1.0)
+                time.sleep(delay)
 
                 with page.expect_download(timeout=60000) as download_info:
                     fila.locator(STIVSelectors.COL_ARCHIVO).click()
@@ -152,44 +208,96 @@ class STIVScraper:
             
         return descargados_en_pagina
 
+    def _create_stealth_context(self, browser: Browser) -> BrowserContext:
+        """Create a browser context with comprehensive anti-detection."""
+        selected_ua: str = random.choice(_USER_AGENTS)
+        width: int = random.choice([1280, 1366, 1440, 1536])
+        height: int = random.choice([768, 800, 900, 864])
+        
+        context: BrowserContext = browser.new_context(
+            accept_downloads=True,
+            user_agent=selected_ua,
+            viewport={"width": width, "height": height},
+            locale="es-MX",
+            timezone_id="America/Mexico_City",
+            extra_http_headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Accept-Encoding": "gzip, deflate, br",
+                "DNT": "1",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+            },
+        )
+        logger.info(f"STIV context: UA={selected_ua[:60]}..., viewport={width}x{height}")
+        return context
+
+    def _detect_waf_block(self, page: Page) -> bool:
+        """Detect if Azure WAF has blocked the request."""
+        try:
+            title: str = page.title().lower()
+            body_start: str = page.locator("body").inner_text()[:300].lower()
+            blocked_signals = ["403", "forbidden", "access denied", "blocked"]
+            return any(sig in title or sig in body_start for sig in blocked_signals)
+        except Exception:
+            return False
+
+    def _wait_for_page_change(self, page: Page, target_page: int) -> bool:
+        """Wait for DevExpress pagination to confirm page change via .dxp-summary text."""
+        target_text: str = f"P\u00e1gina {target_page} de"
+        for attempt in range(_DXP_PAGE_CHANGE_POLL_ATTEMPTS):
+            try:
+                summary_text: str = page.locator(".dxp-summary").first.inner_text()
+                if target_text in summary_text:
+                    logger.info(f"\u2713 Paginador confirm\u00f3: {summary_text}")
+                    return True
+            except Exception:
+                pass
+            page.wait_for_timeout(_DXP_PAGE_CHANGE_POLL_INTERVAL_MS)
+        
+        logger.warning(f"No se pudo verificar cambio a p\u00e1gina {target_page} tras {_DXP_PAGE_CHANGE_POLL_ATTEMPTS} intentos.")
+        return False
+
     def extraer(self) -> None:
         """Controlador principal de extracción masiva con paginación y evasión avanzada."""
         with sync_playwright() as p:
-            # Evasión de Antidetect (WAF Azure)
+            # Stealth browser launch
             browser: Browser = p.chromium.launch(
                 headless=False,
                 channel="msedge",
-                args=["--disable-blink-features=AutomationControlled"]
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-features=IsolateOrigins,site-per-process",
+                    "--disable-dev-shm-usage",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                ]
             )
             
-            context: BrowserContext = browser.new_context(
-                accept_downloads=True,
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
-                viewport={"width": 1280, "height": 800}
-            )
-            
+            context: BrowserContext = self._create_stealth_context(browser)
             page: Page = context.new_page()
-            page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                window.chrome = { runtime: {} };
-                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-            """)
+            page.add_init_script(_STEALTH_INIT_SCRIPT)
             
             try:
                 self.retry_strategy.execute(self._navegar_a_busqueda, page)
                 
-                # Validar de inmediato si la IP está bloqueada por el WAF (403 Forbidden)
-                page_title = page.title()
-                if "403" in page_title or "Forbidden" in page_title or "403" in page.locator("body").inner_text()[:200]:
-                    raise RuntimeError("WAF Bloqueó nuestra IP (403 Forbidden). Activando secuencia de autorrecuperación.")
+                # WAF detection checkpoint
+                if self._detect_waf_block(page):
+                    raise RuntimeError(
+                        "WAF Bloqueó nuestra IP (403 Forbidden). "
+                        "Activando secuencia de autorrecuperación. Cooldown de 300s recomendado."
+                    )
                 
-                total_descargados = 0
-                pagina_actual = 1
-                paginas_totales = 1 # Valor por defecto
+                total_descargados: int = 0
+                pagina_actual: int = 1
+                paginas_totales: int = 1
                 
                 # Obtener el total real de páginas parseando el texto del paginador
                 try:
-                    resumen_paginador = page.locator(".dxp-summary").first.inner_text()
+                    resumen_paginador: str = page.locator(".dxp-summary").first.inner_text()
                     # Ejemplo de texto: "Página 1 de 127 (6311 Documentos)"
                     match = re.search(r'de\s+(\d+)', resumen_paginador)
                     if match:
@@ -202,7 +310,7 @@ class STIVScraper:
                     logger.info(f"--- Procesando Página {pagina_actual} de {paginas_totales} ---")
                     
                     # 1. Procesar registros de la página actual
-                    descargados = self._procesar_resultados_pagina(page)
+                    descargados: int = self._procesar_resultados_pagina(page)
                     total_descargados += descargados
                     
                     # 2. Si ya llegamos a la última página, terminamos de inmediato
@@ -210,8 +318,8 @@ class STIVScraper:
                         logger.info("¡Se ha alcanzado y procesado la última página!")
                         break
                         
-                    # 3. Cambiar a la siguiente página secuencialmente usando el botón Siguiente
-                    siguiente_pagina = pagina_actual + 1
+                    # 3. Cambiar a la siguiente página secuencialmente
+                    siguiente_pagina: int = pagina_actual + 1
                     logger.info(f"Cambiando a la página {siguiente_pagina} usando el botón Siguiente...")
                     
                     btn_siguiente = page.locator(STIVSelectors.BTN_SIGUIENTE).first
@@ -219,7 +327,7 @@ class STIVScraper:
                         # Fallback robusto en caso de que cambie el selector
                         btn_siguiente = page.locator(".dxp-button").filter(has=page.locator("img")).last
                         
-                    # Hacer click físico real en el botón de Siguiente (PBN)
+                    # Click físico real en el botón de Siguiente
                     btn_siguiente.click()
                     
                     # Esperar la carga de la página de forma inteligente y segura
@@ -227,45 +335,41 @@ class STIVScraper:
                     
                     # A. Esperar a que el panel de carga aparezca y desaparezca (DevExpress postback)
                     try:
-                        page.wait_for_selector(STIVSelectors.LOADING_PANEL, state="visible", timeout=3000)
-                        logger.info("Panel de carga detectado.")
+                        page.wait_for_selector(
+                            STIVSelectors.LOADING_PANEL,
+                            state="visible",
+                            timeout=_DXP_LOADING_VISIBLE_TIMEOUT_MS,
+                        )
+                        logger.debug("Panel de carga detectado.")
                     except Exception:
                         pass
                         
                     try:
-                        page.wait_for_selector(STIVSelectors.LOADING_PANEL, state="hidden", timeout=120000)
-                        logger.info("Panel de carga ocultado con éxito.")
+                        page.wait_for_selector(
+                            STIVSelectors.LOADING_PANEL,
+                            state="hidden",
+                            timeout=_DXP_LOADING_HIDDEN_TIMEOUT_MS,
+                        )
+                        logger.debug("Panel de carga ocultado con éxito.")
                     except Exception:
                         pass
                         
-                    # B. Esperar obligatoriamente a que el texto de .dxp-summary cambie reflejando la nueva página
-                    page_changed = False
-                    target_text = f"Página {siguiente_pagina} de"
-                    for _ in range(30): # Máximo 15 segundos de validación
-                        try:
-                            summary_text = page.locator(".dxp-summary").first.inner_text()
-                            if target_text in summary_text:
-                                logger.info(f"¡Confirmado! El paginador cambió a: {summary_text}")
-                                page_changed = True
-                                break
-                        except Exception:
-                            pass
-                        page.wait_for_timeout(500)
+                    # B. Confirm page change via .dxp-summary text
+                    self._wait_for_page_change(page, siguiente_pagina)
                         
-                    if not page_changed:
-                        logger.warning(f"No se pudo verificar visualmente el cambio a la página {siguiente_pagina}, continuando con el DOM actual.")
-                        
-                    # C. Pausa biológica de seguridad post-carga
-                    page.wait_for_timeout(random.uniform(2000, 4000))
+                    # C. Randomized biological pause post-load
+                    bio_pause_ms: int = random.randint(2500, 5000)
+                    page.wait_for_timeout(bio_pause_ms)
                     
-                    # Avanzar el contador a la siguiente página
+                    # Avanzar el contador
                     pagina_actual = siguiente_pagina
                         
             except Exception as e:
                 logger.critical(f"Fallo crítico en el pipeline de extracción: {e}")
-                raise e
+                raise
                 
             finally:
                 logger.info(f"Extracción finalizada. Documentos totales: {total_descargados}")
+                context.close()
                 browser.close()
 

@@ -1,0 +1,455 @@
+{
+  "summary": {
+    "total_files": 18,
+    "successful": 18,
+    "failed": 0,
+    "total_time_s": 145.69443464279175
+  },
+  "field_rates": {
+    "clave_pizarra": 100.0,
+    "serie": 100.0,
+    "categoria": 0.0,
+    "tipo_admin": 0.0,
+    "benchmark": 100.0,
+    "horizonte": 77.8,
+    "comision_admin": 50.0,
+    "comision_desempeno": 100.0,
+    "ter": 100.0,
+    "var_max": 0.0,
+    "var_prom": 0.0,
+    "volatilidad": 0.0,
+    "calif_riesgo": 0.0,
+    "rend_1m": 0.0,
+    "rend_3m": 0.0,
+    "rend_12m": 0.0,
+    "rend_3y": 0.0,
+    "bench_1m": 0.0,
+    "bench_3m": 0.0,
+    "bench_12m": 0.0,
+    "bench_3y": 0.0,
+    "fecha_corte": 0.0
+  },
+  "by_tipo_doc": {
+    "DICI": {
+      "clave_pizarra": 100.0,
+      "serie": 100.0,
+      "categoria": 0.0,
+      "tipo_admin": 0.0,
+      "benchmark": 100.0,
+      "horizonte": 55.6,
+      "comision_admin": 100.0,
+      "comision_desempeno": 100.0,
+      "ter": 100.0,
+      "var_max": 0.0,
+      "var_prom": 0.0,
+      "volatilidad": 0.0,
+      "calif_riesgo": 0.0,
+      "rend_1m": 0.0,
+      "rend_3m": 0.0,
+      "rend_12m": 0.0,
+      "rend_3y": 0.0,
+      "bench_1m": 0.0,
+      "bench_3m": 0.0,
+      "bench_12m": 0.0,
+      "bench_3y": 0.0,
+      "fecha_corte": 0.0
+    },
+    "Prospecto": {
+      "clave_pizarra": 100.0,
+      "serie": 100.0,
+      "categoria": 0.0,
+      "tipo_admin": 0.0,
+      "benchmark": 100.0,
+      "horizonte": 100.0,
+      "comision_admin": 0.0,
+      "comision_desempeno": 100.0,
+      "ter": 100.0,
+      "var_max": 0.0,
+      "var_prom": 0.0,
+      "volatilidad": 0.0,
+      "calif_riesgo": 0.0,
+      "rend_1m": 0.0,
+      "rend_3m": 0.0,
+      "rend_12m": 0.0,
+      "rend_3y": 0.0,
+      "bench_1m": 0.0,
+      "bench_3m": 0.0,
+      "bench_12m": 0.0,
+      "bench_3y": 0.0,
+      "fecha_corte": 0.0
+    }
+  },
+  "by_institucion": {
+    "HSBC": {
+      "total_files": 18,
+      "comision_admin_rate": 50.0,
+      "ter_rate": 100.0,
+      "rend_12m_rate": 0.0,
+      "categoria_rate": 0.0
+    }
+  },
+  "errors": {},
+  "failed_files": [],
+  "detailed_results": [
+    {
+      "file": "HSBCBAL BFP_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 13.48,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "0.00%",
+        "ter": "1.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCBAL BFP_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 4.59,
+      "values": {
+        "clave_pizarra": "Emisora",
+        "serie": "BI1",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCDGP BFS_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 12.22,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "0.N6/0D%",
+        "ter": "1.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCDGP BFS_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 3.7,
+      "values": {
+        "clave_pizarra": "HSBCDGP",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCDGP BFV_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 12.03,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "0.N6/0D%",
+        "ter": "1.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCDGP BFV_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 3.71,
+      "values": {
+        "clave_pizarra": "HSBCDGP",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCDGP BIX_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 12.21,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "0.N6/0D%",
+        "ter": "1.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCDGP BIX_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 3.75,
+      "values": {
+        "clave_pizarra": "HSBCDGP",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCGLE BFA_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 13.33,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "9.N2/8D%",
+        "ter": "Accionaria\nA",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCGLE BFA_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 3.81,
+      "values": {
+        "clave_pizarra": "Categor",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCMDL BFP_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 12.6,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "1.00%",
+        "ter": "1.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCMDL BFP_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 3.21,
+      "values": {
+        "clave_pizarra": "Categor",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCPRA BFE_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 13.55,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "0.00%",
+        "ter": "18.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCPRA BFE_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 4.65,
+      "values": {
+        "clave_pizarra": "Emisora",
+        "serie": "BI1",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBGOB2 BIE1_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 11.69,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "3.00%",
+        "ter": "3.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBGOB2 BIE1_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 2.72,
+      "values": {
+        "clave_pizarra": "HSBGOB2",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBGOB2 BIE2_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 11.75,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "3.00%",
+        "ter": "3.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBGOB2 BIE2_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 2.7,
+      "values": {
+        "clave_pizarra": "HSBGOB2",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    }
+  ]
+}

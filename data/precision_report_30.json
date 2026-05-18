@@ -1,0 +1,628 @@
+{
+  "summary": {
+    "total_files": 30,
+    "successful": 18,
+    "failed": 12,
+    "total_time_s": 112.29038047790527
+  },
+  "field_rates": {
+    "clave_pizarra": 100.0,
+    "serie": 88.9,
+    "categoria": 0.0,
+    "tipo_admin": 0.0,
+    "benchmark": 72.2,
+    "horizonte": 50.0,
+    "comision_admin": 44.4,
+    "comision_desempeno": 66.7,
+    "ter": 72.2,
+    "var_max": 0.0,
+    "var_prom": 0.0,
+    "volatilidad": 0.0,
+    "calif_riesgo": 0.0,
+    "rend_1m": 0.0,
+    "rend_3m": 5.6,
+    "rend_12m": 11.1,
+    "rend_3y": 0.0,
+    "bench_1m": 0.0,
+    "bench_3m": 11.1,
+    "bench_12m": 11.1,
+    "bench_3y": 0.0,
+    "fecha_corte": 27.8
+  },
+  "by_tipo_doc": {
+    "DICI": {
+      "clave_pizarra": 100.0,
+      "serie": 100.0,
+      "categoria": 0.0,
+      "tipo_admin": 0.0,
+      "benchmark": 62.5,
+      "horizonte": 12.5,
+      "comision_admin": 62.5,
+      "comision_desempeno": 62.5,
+      "ter": 62.5,
+      "var_max": 0.0,
+      "var_prom": 0.0,
+      "volatilidad": 0.0,
+      "calif_riesgo": 0.0,
+      "rend_1m": 0.0,
+      "rend_3m": 0.0,
+      "rend_12m": 12.5,
+      "rend_3y": 0.0,
+      "bench_1m": 0.0,
+      "bench_3m": 0.0,
+      "bench_12m": 0.0,
+      "bench_3y": 0.0,
+      "fecha_corte": 12.5
+    },
+    "Prospecto": {
+      "clave_pizarra": 100.0,
+      "serie": 80.0,
+      "categoria": 0.0,
+      "tipo_admin": 0.0,
+      "benchmark": 80.0,
+      "horizonte": 80.0,
+      "comision_admin": 30.0,
+      "comision_desempeno": 70.0,
+      "ter": 80.0,
+      "var_max": 0.0,
+      "var_prom": 0.0,
+      "volatilidad": 0.0,
+      "calif_riesgo": 0.0,
+      "rend_1m": 0.0,
+      "rend_3m": 10.0,
+      "rend_12m": 10.0,
+      "rend_3y": 0.0,
+      "bench_1m": 0.0,
+      "bench_3m": 20.0,
+      "bench_12m": 20.0,
+      "bench_3y": 0.0,
+      "fecha_corte": 40.0
+    }
+  },
+  "by_institucion": {
+    "Franklin_Templeton": {
+      "total_files": 3,
+      "comision_admin_rate": 0.0,
+      "ter_rate": 0.0,
+      "rend_12m_rate": 0.0,
+      "categoria_rate": 0.0
+    },
+    "BBVA": {
+      "total_files": 1,
+      "comision_admin_rate": 100.0,
+      "ter_rate": 100.0,
+      "rend_12m_rate": 0.0,
+      "categoria_rate": 0.0
+    },
+    "HSBC": {
+      "total_files": 6,
+      "comision_admin_rate": 16.7,
+      "ter_rate": 100.0,
+      "rend_12m_rate": 0.0,
+      "categoria_rate": 0.0
+    },
+    "Vector": {
+      "total_files": 2,
+      "comision_admin_rate": 100.0,
+      "ter_rate": 100.0,
+      "rend_12m_rate": 100.0,
+      "categoria_rate": 0.0
+    },
+    "SURA": {
+      "total_files": 1,
+      "comision_admin_rate": 0.0,
+      "ter_rate": 0.0,
+      "rend_12m_rate": 0.0,
+      "categoria_rate": 0.0
+    },
+    "Banorte": {
+      "total_files": 1,
+      "comision_admin_rate": 0.0,
+      "ter_rate": 0.0,
+      "rend_12m_rate": 0.0,
+      "categoria_rate": 0.0
+    },
+    "BNP_Paribas": {
+      "total_files": 3,
+      "comision_admin_rate": 100.0,
+      "ter_rate": 100.0,
+      "rend_12m_rate": 0.0,
+      "categoria_rate": 0.0
+    },
+    "Azimut": {
+      "total_files": 1,
+      "comision_admin_rate": 100.0,
+      "ter_rate": 100.0,
+      "rend_12m_rate": 0.0,
+      "categoria_rate": 0.0
+    }
+  },
+  "errors": {
+    "Documento vacio": 11,
+    "PdfminerException": 1
+  },
+  "failed_files": [
+    "SCOT-29_Prospecto_24-04-2026_CNBV_-_Escritos_inf_relevante_y_entrada_en_vigor_C.pdf",
+    "SCOT-50_Prospecto_24-04-2026_Prospecto_Ciclos_de_Vida.pdf",
+    "_Prospecto_30-04-2026_FT-1990_Prospecto_29abril2026.pdf",
+    "SCOT-36_Prospecto_24-04-2026_Prospecto_Ciclos_de_Vida.pdf",
+    "_DICI_04-05-2026_DICI_SCOTD+5.pdf",
+    "NTEESG_Prospecto_30-03-2026_Prospecto_NTEESG_autorizado_firmado.pdf",
+    "SCOTUSA_Prospecto_26-03-2026_Prospecto_General.pdf",
+    "NTEMXN_DICI_09-04-2026_DICI_NTEMXN_firmado.pdf",
+    "SCOTUDI_Prospecto_12-03-2026_PROSPECTO_GENERAL_vl2.pdf",
+    "SCOT-43_Prospecto_24-04-2026_Prospecto_General_Ciclos_de_Vida.pdf",
+    "SCOT-29_Prospecto_24-04-2026_Prospecto_General_Ciclos_de_Vida.pdf",
+    "SCOT-43_Prospecto_24-04-2026_CNBV_-_Escritos_inf_relevante_y_entrada_en_vigor_C.pdf"
+  ],
+  "detailed_results": [
+    {
+      "file": "SCOT-29_Prospecto_24-04-2026_CNBV_-_Escritos_inf_relevante_y_entrada_en_vigor_C.pdf",
+      "tipo": "Prospecto",
+      "inst": "Scotiabank",
+      "success": false,
+      "time_s": 0.01,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "_DICI_30-04-2026_DICI_FT-RETI_29abril2026.pdf",
+      "tipo": "DICI",
+      "inst": "Franklin_Templeton",
+      "success": true,
+      "time_s": 0.03,
+      "values": {
+        "clave_pizarra": "FT-RETI",
+        "serie": "Posibles",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": null,
+        "ter": null,
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "BBVARFL_Prospecto_08-04-2026_Prospecto_125_2026_5374.pdf",
+      "tipo": "Prospecto",
+      "inst": "BBVA",
+      "success": true,
+      "time_s": 2.61,
+      "values": {
+        "clave_pizarra": "BBVARFL",
+        "serie": "NC",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": ",",
+        "comision_desempeno": null,
+        "ter": "PONSABLES.\nRA DE INVER",
+        "rend_12m": null,
+        "bench_12m": "N.D.",
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "SCOT-50_Prospecto_24-04-2026_Prospecto_Ciclos_de_Vida.pdf",
+      "tipo": "Prospecto",
+      "inst": "Scotiabank",
+      "success": false,
+      "time_s": 0.06,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "HSBGOB2 BIE1_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 2.55,
+      "values": {
+        "clave_pizarra": "HSBGOB2",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCMDL BFP_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 3.18,
+      "values": {
+        "clave_pizarra": "Categor",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCGLE BFA_DICI_20260517.pdf",
+      "tipo": "DICI",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 13.54,
+      "values": {
+        "clave_pizarra": "Posibles",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "1.00%",
+        "comision_desempeno": "9.N2/8D%",
+        "ter": "Accionaria\nA",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "_Prospecto_30-04-2026_FT-1990_Prospecto_29abril2026.pdf",
+      "tipo": "Prospecto",
+      "inst": "Franklin_Templeton",
+      "success": false,
+      "time_s": 0.04,
+      "values": {},
+      "error": "PdfminerException: No /Root object! - Is this really a PDF?"
+    },
+    {
+      "file": "FMXUSA_Prospecto_09-05-2023_ProspectoParticularVECTUSA.pdf",
+      "tipo": "Prospecto",
+      "inst": "Vector",
+      "success": true,
+      "time_s": 3.76,
+      "values": {
+        "clave_pizarra": "VECTUSA",
+        "serie": "A",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "nistra al",
+        "comision_desempeno": "RIESGOS",
+        "ter": "PÚBLICO",
+        "rend_12m": "-14.90%",
+        "bench_12m": "-12.57%",
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "_DICI_30-04-2026_DICI_FT-1990_29abril2026.pdf",
+      "tipo": "DICI",
+      "inst": "Franklin_Templeton",
+      "success": true,
+      "time_s": 0.03,
+      "values": {
+        "clave_pizarra": "FT-1990",
+        "serie": "Posibles",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": null,
+        "ter": null,
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "SCOT-36_Prospecto_24-04-2026_Prospecto_Ciclos_de_Vida.pdf",
+      "tipo": "Prospecto",
+      "inst": "Scotiabank",
+      "success": false,
+      "time_s": 0.06,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "FONDEO_Prospecto_09-04-2026_260409_Escrito_informativo_CNBV_FONDEO.pdf",
+      "tipo": "Prospecto",
+      "inst": "SURA",
+      "success": true,
+      "time_s": 0.01,
+      "values": {
+        "clave_pizarra": "FONDEO",
+        "serie": "Unica",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": null,
+        "ter": null,
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "_DICI_04-05-2026_DICI_SCOTD+5.pdf",
+      "tipo": "DICI",
+      "inst": "Scotiabank",
+      "success": false,
+      "time_s": 0.04,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "NTESEL_Prospecto_13-05-2026_Escrito_NTESEL_respuesta_a_CNBV_byc.pdf",
+      "tipo": "Prospecto",
+      "inst": "Banorte",
+      "success": true,
+      "time_s": 0.01,
+      "values": {
+        "clave_pizarra": "NTESEL",
+        "serie": "Unica",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": null,
+        "ter": null,
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "_DICI_30-04-2026_DICI_FT-1970_29abril2026.pdf",
+      "tipo": "DICI",
+      "inst": "Franklin_Templeton",
+      "success": true,
+      "time_s": 0.03,
+      "values": {
+        "clave_pizarra": "FT-1970",
+        "serie": "Posibles",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": null,
+        "ter": null,
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "SMX-LP_DICI_04-05-2026_DICI_Autorizado_SMX-LP_(Próximo_SAMCAP0).pdf",
+      "tipo": "DICI",
+      "inst": "BNP_Paribas",
+      "success": true,
+      "time_s": 17.99,
+      "values": {
+        "clave_pizarra": "SMX-LP",
+        "serie": "Accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "0.00%",
+        "comision_desempeno": "100.00%",
+        "ter": "3.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "NTEESG_Prospecto_30-03-2026_Prospecto_NTEESG_autorizado_firmado.pdf",
+      "tipo": "Prospecto",
+      "inst": "Banorte",
+      "success": false,
+      "time_s": 0.05,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "SMX-50_DICI_30-03-2017_20170327_DICIs_Ciclos_de_Vida_fondo_BNPP-50_con_au.pdf",
+      "tipo": "DICI",
+      "inst": "BNP_Paribas",
+      "success": true,
+      "time_s": 13.55,
+      "values": {
+        "clave_pizarra": "CATEGOR",
+        "serie": "M",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "2.50%",
+        "comision_desempeno": "-50.00%",
+        "ter": "2.50%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "MXRATES_DICI_09-05-2023_DICIMXRATES.pdf",
+      "tipo": "DICI",
+      "inst": "Vector",
+      "success": true,
+      "time_s": 7.73,
+      "values": {
+        "clave_pizarra": "Calificaci",
+        "serie": "accionaria",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "0.00%",
+        "comision_desempeno": "0.00%",
+        "ter": "0.00%",
+        "rend_12m": "7.32%",
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "SCOTUSA_Prospecto_26-03-2026_Prospecto_General.pdf",
+      "tipo": "Prospecto",
+      "inst": "Scotiabank",
+      "success": false,
+      "time_s": 0.04,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "HSBCDGP BIX_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 3.8,
+      "values": {
+        "clave_pizarra": "HSBCDGP",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCGLE BFA_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 3.74,
+      "values": {
+        "clave_pizarra": "Categor",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "NTEMXN_DICI_09-04-2026_DICI_NTEMXN_firmado.pdf",
+      "tipo": "DICI",
+      "inst": "Banorte",
+      "success": false,
+      "time_s": 0.05,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "SMX-LP_Prospecto_04-05-2026_Prospecto_Autorizado_SMX-LP_(Próximo_SAMCAP0).pdf",
+      "tipo": "Prospecto",
+      "inst": "BNP_Paribas",
+      "success": true,
+      "time_s": 13.57,
+      "values": {
+        "clave_pizarra": "SMX-LP",
+        "serie": "ni",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "90 (Torre Arco\nectrónica en la\nondad de las\nconforman su\nrán ser solicita\nno podrán se\n. OPERACIÓN\nque el Fondo p\no podría no c\ne la venta de\nación y/o con\nmargen de t\ncedente.\nE INVERSIÓN\n.\nón pública pa\ndos de Invers\nelebran con la\ndad Operadora\nes a que hace\nue forme parte",
+        "comision_desempeno": "SAM\nen instrumentos d\na:\nd de México, con\n05120, Ciudad de\nos del contacto p\nn contacto con la p\nntes: 4122-9115 y\núblico inversionis\no de los fondos, n\ndora de Fondos d\nta podrán ser soli\nn solicitar órdenes\ny las ventas al fin\na conforme a lo de\ns anticipadas no\nvencimiento men\nsidades de liquid\nun cuando éstos\nde composición d\n8:30 hasta las 13:\ndora su horario d\nar las órdenes de\nyan recibido dentr\nncisos i) a iv) del\nidad de la Socied\nor el Gobierno Fe\nt Management, S.\net Management UK\nestacar que SAM\nue no resulta aplic\nque actúa de forma\ne del Grupo Financ",
+        "ter": "SAM\nen instrumentos d\na:\nd de México, con\n05120, Ciudad de\nos del contacto p\nn contacto con la p\nntes: 4122-9115 y\núblico inversionis\no de los fondos, n\ndora de Fondos d\nta podrán ser soli\nn solicitar órdenes\ny las ventas al fin\na conforme a lo de\ns anticipadas no\nvencimiento men\nsidades de liquid\nun cuando éstos\nde composición d\n8:30 hasta las 13:\ndora su horario d\nar las órdenes de\nyan recibido dentr\nncisos i) a iv) del\nidad de la Socied\nor el Gobierno Fe\nt Management, S.\net Management UK\nestacar que SAM\nue no resulta aplic\nque actúa de forma\ne del Grupo Financ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "SCOTUDI_Prospecto_12-03-2026_PROSPECTO_GENERAL_vl2.pdf",
+      "tipo": "Prospecto",
+      "inst": "Scotiabank",
+      "success": false,
+      "time_s": 0.04,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "AZTKG01_DICI_14-04-2026_DICI_AZTECA+.pdf",
+      "tipo": "DICI",
+      "inst": "Azimut",
+      "success": true,
+      "time_s": 21.77,
+      "values": {
+        "clave_pizarra": "AZTECA",
+        "serie": "A",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": "N/A",
+        "comision_desempeno": "N/A",
+        "ter": "3.00%",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "HSBCDGP BFV_Prospecto_20260517.pdf",
+      "tipo": "Prospecto",
+      "inst": "HSBC",
+      "success": true,
+      "time_s": 3.9,
+      "values": {
+        "clave_pizarra": "HSBCDGP",
+        "serie": "y",
+        "categoria": null,
+        "tipo_admin": null,
+        "comision_admin": null,
+        "comision_desempeno": "S",
+        "ter": "R PÚ",
+        "rend_12m": null,
+        "bench_12m": null,
+        "var_max": null
+      },
+      "error": null
+    },
+    {
+      "file": "SCOT-43_Prospecto_24-04-2026_Prospecto_General_Ciclos_de_Vida.pdf",
+      "tipo": "Prospecto",
+      "inst": "Scotiabank",
+      "success": false,
+      "time_s": 0.04,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "SCOT-29_Prospecto_24-04-2026_Prospecto_General_Ciclos_de_Vida.pdf",
+      "tipo": "Prospecto",
+      "inst": "Scotiabank",
+      "success": false,
+      "time_s": 0.04,
+      "values": {},
+      "error": "Documento vacio"
+    },
+    {
+      "file": "SCOT-43_Prospecto_24-04-2026_CNBV_-_Escritos_inf_relevante_y_entrada_en_vigor_C.pdf",
+      "tipo": "Prospecto",
+      "inst": "Scotiabank",
+      "success": false,
+      "time_s": 0.01,
+      "values": {},
+      "error": "Documento vacio"
+    }
+  ]
+}

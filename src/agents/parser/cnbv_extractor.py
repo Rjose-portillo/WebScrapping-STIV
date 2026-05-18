@@ -29,11 +29,31 @@ def _normalize_percentage(raw: Optional[str]) -> Optional[str]:
     """Normaliza un valor porcentual a formato consistente 'X.XX%'.
 
     Acepta formatos: '1.50%', '1.50 %', '1.50', '0,75%', '-0.32%'
+    Maneja artefactos de PDF como '2.N9/1D%' -> '2.91%' (N/D intercalado)
     Retorna None si no puede interpretar el valor.
     """
     if not raw:
         return None
     cleaned = raw.strip().replace(",", ".").replace(" ", "")
+    
+    # Handle interleaved N/D artifact (e.g., "2.N9/1D%" -> "2.91%")
+    # These occur when pdfplumber merges two overlapping sub-columns
+    # Pattern: digits mixed with N, /, D characters from "N/D" text
+    has_digits = bool(re.search(r"\d", cleaned))
+    has_nd_chars = bool(re.search(r"[NnDd]", cleaned)) and "/" in cleaned
+    if has_nd_chars and has_digits:
+        # Strip out N, D, / characters to recover the numeric value
+        numeric_only = re.sub(r"[NnDd/]", "", cleaned).replace("%", "").strip()
+        try:
+            val = float(numeric_only)
+            return f"{val:.2f}%"
+        except (ValueError, TypeError):
+            pass
+    # Pure N/D, N/A values
+    upper_clean = cleaned.upper().replace("%", "").replace(" ", "").replace(".", "")
+    if upper_clean in ("N/D", "ND", "N/A", "NA", "NOCOBRA", "NOAPLICA", "NINGUNA"):
+        return None
+    
     # Eliminar el signo % si existe, lo agregaremos despues
     has_percent = "%" in cleaned
     cleaned = cleaned.replace("%", "")
@@ -394,14 +414,14 @@ class CNBVExtractor:
         }
 
         period_identifiers = {
-            "1_mes": re.compile(r"(?:1|un)\s*mes", re.IGNORECASE),
-            "3_meses": re.compile(r"(?:3|tres)\s*meses", re.IGNORECASE),
-            "12_meses": re.compile(r"(?:12|doce)\s*meses|(?:1|un)\s*a[nñ]o", re.IGNORECASE),
-            "3_anios": re.compile(r"(?:3|tres)\s*a[nñ]os?|(?:36)\s*meses", re.IGNORECASE),
+            "1_mes": re.compile(r"(?:1|un|[úu]ltimo)\s*mes(?!es)", re.IGNORECASE | re.DOTALL),
+            "3_meses": re.compile(r"(?:3|tres)\s*meses|[úu]ltimos\s*3", re.IGNORECASE | re.DOTALL),
+            "12_meses": re.compile(r"(?:12|doce)\s*meses|(?:1|un)\s*a[nñ]o|[úu]ltimos\s*12", re.IGNORECASE | re.DOTALL),
+            "3_anios": re.compile(r"(?:3|tres)\s*a[nñ]os?|(?:36)\s*meses", re.IGNORECASE | re.DOTALL),
         }
 
         fund_row_keywords = re.compile(
-            r"(?:fondo|serie|rendimiento\s+(?:del\s+)?fondo|neto|cartera)", re.IGNORECASE)
+            r"(?:rendimiento\s+neto|rendimiento\s+del\s+fondo|fondo|cartera)", re.IGNORECASE)
         benchmark_row_keywords = re.compile(
             r"(?:benchmark|[ií]ndice|referencia|comparativo|base)", re.IGNORECASE)
 
@@ -410,10 +430,13 @@ class CNBVExtractor:
             content_lower = tblock.text.lower()
             is_rendimiento_table = any(kw in content_lower for kw in [
                 "rendimientos netos", "rendimiento neto",
+                "rendimiento y desempeño", "rendimiento y desempeno",
+                "tabla de rendimientos",
                 "desempeño histórico", "desempeno historico",
                 "rendimientos históricos", "rendimientos historicos",
                 "desempeño del fondo", "desempeno del fondo",
-                "rendimientos anualizados", "performance",
+                "rendimientos anualizados", "rendimientos efectivos",
+                "performance",
             ])
 
             if not is_rendimiento_table:
@@ -427,7 +450,7 @@ class CNBVExtractor:
             max_col = max(c for r, c in cells.keys()) if cells else 0
 
             col_to_period: Dict[int, str] = {}
-            for row_idx in range(1, min(4, max_row + 1)):
+            for row_idx in range(1, min(8, max_row + 1)):
                 for col_idx in range(1, max_col + 1):
                     cell_text = cells.get((row_idx, col_idx), "")
                     for period_key, period_re in period_identifiers.items():
@@ -471,6 +494,12 @@ class CNBVExtractor:
 
         if not any(v is not None for v in rendimientos["periodos"].values()):
             all_text = self._get_full_text(blocks)
+            # Strategy 2: Text-based rendimiento table parsing (fitz output)
+            rendimientos = self._extract_rendimientos_from_text(all_text, rendimientos)
+
+        if not any(v is not None for v in rendimientos["periodos"].values()):
+            # Strategy 3: Simple regex patterns
+            all_text = self._get_full_text(blocks)
             for period_key, patterns_list in self.rendimiento_patterns.items():
                 for pattern in patterns_list:
                     match = pattern.search(all_text)
@@ -481,6 +510,124 @@ class CNBVExtractor:
         if not rendimientos["fecha_corte"]:
             rendimientos["fecha_corte"] = self._find_in_blocks(blocks, "fecha_corte")
 
+        return rendimientos
+
+    def _extract_rendimientos_from_text(self, text: str, rendimientos: Dict[str, Any]) -> Dict[str, Any]:
+        """Extrae rendimientos de texto plano (formato DICI CNBV/HSBC).
+        
+        Busca patrones como:
+            Rendimiento neto
+            N/D
+            2.85%
+            N/D
+            2.01%
+            ...
+        
+        Donde los valores corresponden a: 1 Mes, 3 Meses, 12 Meses, luego años.
+        """
+        lines = text.split("\n")
+        
+        # Find "Rendimiento neto" line
+        rend_neto_idx = None
+        for i, line in enumerate(lines):
+            if re.match(r"^\s*rendimiento\s+neto\s*$", line.strip(), re.IGNORECASE):
+                rend_neto_idx = i
+                break
+        
+        if rend_neto_idx is None:
+            return rendimientos
+        
+        # Also try to find header pattern to determine column positions
+        # Look backwards for "Último Mes", "Últimos 3 Meses", "Últimos 12 Meses"
+        header_found = False
+        period_columns = []  # List of period keys in order
+        
+        for i in range(max(0, rend_neto_idx - 15), rend_neto_idx):
+            line_lower = lines[i].strip().lower()
+            if "ltimo" in line_lower and "mes" in line_lower and "12" not in line_lower and "3" not in line_lower:
+                period_columns.append("1_mes")
+                header_found = True
+            elif ("3" in line_lower and "mes" in line_lower) or "ltimos 3" in line_lower:
+                period_columns.append("3_meses")
+            elif ("12" in line_lower and "mes" in line_lower) or "ltimos 12" in line_lower:
+                period_columns.append("12_meses")
+            elif re.match(r"^\s*\d{4}\s*$", lines[i].strip()):
+                # Year column - could be annual return
+                pass
+        
+        if not period_columns:
+            # Default assumption for DICI format
+            period_columns = ["1_mes", "3_meses", "12_meses"]
+        
+        # Extract values after "Rendimiento neto"
+        values = []
+        for i in range(rend_neto_idx + 1, min(rend_neto_idx + 25, len(lines))):
+            line = lines[i].strip()
+            if not line:
+                continue
+            # Stop if we hit another label
+            if re.match(r"^[A-Za-záéíóúÁÉÍÓÚñÑ\s]+$", line) and len(line) > 5:
+                # Check if it's a label like "Tasa libre de riesgo"
+                if any(kw in line.lower() for kw in ["tasa", "riesgo", "serie", "válida", "pérdida", "índice"]):
+                    break
+            # Try to extract percentage value
+            match = re.match(r"^\s*(-?\d+[.,]?\d*)\s*%?\s*$", line)
+            if match:
+                values.append(_normalize_percentage(match.group(0)))
+            elif line.upper() in ("N/D", "N/A", "-", "ND"):
+                values.append(None)  # Placeholder for missing
+        
+        # Map values to periods
+        # In HSBC format, values alternate: val_for_period1, val_for_period2, ...
+        # But sometimes there are N/D entries interspersed
+        # Filter out None (N/D) entries to get actual values
+        actual_values = [v for v in values if v is not None]
+        
+        # Map to periods based on detected column headers
+        period_keys = ["1_mes", "3_meses", "12_meses", "3_anios"]
+        
+        if len(actual_values) >= 1 and len(period_columns) > 0:
+            for idx, period_key in enumerate(period_columns):
+                if idx < len(actual_values) and period_key in period_keys:
+                    if rendimientos["periodos"].get(period_key) is None:
+                        rendimientos["periodos"][period_key] = actual_values[idx]
+        elif len(actual_values) >= 3:
+            # Fallback: assign first 3 values to 1M, 3M, 12M
+            mapping = list(zip(period_keys[:len(actual_values)], actual_values))
+            for period_key, val in mapping:
+                if rendimientos["periodos"].get(period_key) is None:
+                    rendimientos["periodos"][period_key] = val
+        
+        # Try to find benchmark (Índice) values
+        indice_idx = None
+        for i in range(rend_neto_idx + 1, min(rend_neto_idx + 60, len(lines))):
+            line_lower = lines[i].strip().lower()
+            if re.match(r"^\s*[ií]ndice\s*$", line_lower) or "rendimiento del índice" in line_lower:
+                indice_idx = i
+                break
+        
+        if indice_idx is not None:
+            bench_values = []
+            for i in range(indice_idx + 1, min(indice_idx + 20, len(lines))):
+                line = lines[i].strip()
+                if not line:
+                    continue
+                if re.match(r"^[A-Za-záéíóúÁÉÍÓÚñÑ\s]+$", line) and len(line) > 5:
+                    if any(kw in line.lower() for kw in ["capital", "serie", "válida", "fecha"]):
+                        break
+                match = re.match(r"^\s*(-?\d+[.,]?\d*)\s*%?\s*$", line)
+                if match:
+                    bench_values.append(_normalize_percentage(match.group(0)))
+                elif line.upper() in ("N/D", "N/A", "-", "ND"):
+                    bench_values.append(None)
+            
+            actual_bench = [v for v in bench_values if v is not None]
+            if len(actual_bench) >= 1:
+                for idx, period_key in enumerate(period_columns[:len(actual_bench)]):
+                    if period_key in period_keys:
+                        if rendimientos["benchmark"].get(period_key) is None:
+                            rendimientos["benchmark"][period_key] = actual_bench[idx]
+        
         return rendimientos
 
     # -------------------------------------------------------------------

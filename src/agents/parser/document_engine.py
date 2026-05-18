@@ -129,12 +129,15 @@ def horizontal_overlap(x0_a: float, x1_a: float, x0_b: float, x1_b: float) -> fl
 # ===========================================================================
 #                          MÓDULO PDF (pdfplumber)
 # ===========================================================================
-def detect_tables(page):
+def detect_tables(page, use_text_strategy: bool = True):
     """Detecta tablas en una página de PDF.
 
     Intenta primero con líneas visibles tradicionales.
     Si no, intenta con la estrategia híbrida de precisión (texto vertical + líneas horiz).
-    Si falla, cae en la estrategia de puro texto.
+    Si falla y use_text_strategy es True, cae en la estrategia de puro texto.
+    
+    La estrategia de texto puro (TEXT_TABLE_SETTINGS) es muy costosa en páginas densas.
+    Se recomienda desactivarla para páginas grandes o sin contenido tabular relevante.
     """
     tables = page.find_tables(table_settings=LINE_TABLE_SETTINGS)
     if tables:
@@ -152,8 +155,15 @@ def detect_tables(page):
             return tables
     except Exception:
         pass
-        
-    return page.find_tables(table_settings=TEXT_TABLE_SETTINGS)
+    
+    # TEXT strategy is extremely expensive - only use if enabled and page is not too dense
+    if use_text_strategy:
+        try:
+            return page.find_tables(table_settings=TEXT_TABLE_SETTINGS)
+        except Exception:
+            return []
+    
+    return []
 
 
 def overlaps_table(word: dict, table_bbox: tuple[float, float, float, float]) -> bool:
@@ -473,11 +483,14 @@ def table_block(table, page, page_number: int, index: int) -> Block:
 def extract_pdf(pdf_path: Path) -> list[Block]:
     """Procesa un PDF utilizando una estrategia híbrida de alta velocidad y precisión.
     
-    1. Usa PyMuPDF (fitz) para pre-filtrar de forma instantánea las páginas candidatos
-       que contienen palabras clave de interés (comisiones, administración, rendimiento,
-       pizarra, serie). Las primeras 3 páginas se procesan siempre para no perder metadatos de cabecera.
-    2. Aplica pdfplumber únicamente en esas páginas con tolerancias geométricas optimizadas.
+    Estrategia optimizada para velocidad en documentos financieros CNBV:
+    1. Usa PyMuPDF (fitz) para TODA la extracción de texto (ultra-rápido).
+    2. Aplica pdfplumber SOLO en páginas con alta probabilidad de tablas estructuradas
+       (máximo 6 páginas) para detectar tablas con coordenadas de celdas.
+    3. Limita text-strategy a máximo 2 páginas con headings específicos.
     """
+    import time as _time
+
     if pdfplumber is None:
         raise RuntimeError(
             "pdfplumber no está instalado. Ejecuta: pip install pdfplumber"
@@ -485,72 +498,182 @@ def extract_pdf(pdf_path: Path) -> list[Block]:
 
     all_blocks: list[Block] = []
 
-    # Determinar páginas candidatas usando PyMuPDF (fitz) si está disponible
-    target_pages = None
+    # Phase 1: Fast text extraction with PyMuPDF for ALL pages
+    fitz_blocks: list[Block] = []
+    target_pages_for_plumber: list[int] = []
+    text_strategy_pages: set = set()
+    total_pages = 0
+    
+    # Section headings that indicate pages with tabular financial data
+    table_section_headings = [
+        "estructura de costos", "rendimientos netos", "rendimiento neto",
+        "desempeño histórico", "desempeno historico",
+        "gastos totales", "comisiones y remuneraciones",
+    ]
+    # Headings for general data pages (no table extraction needed, just text)
+    data_headings = [
+        "clave de pizarra", "datos generales", "información general",
+        "régimen de inversión", "clasificación", "horizonte",
+        "administración del fondo", "objetivo de inversión",
+    ]
+    
     if fitz is not None:
         try:
             doc = fitz.open(str(pdf_path))
             total_pages = len(doc)
             
-            # Si el documento es pequeño, procesamos todo
-            if total_pages <= 5:
-                target_pages = list(range(1, total_pages + 1))
-            else:
-                # Páginas 1, 2, 3 siempre se procesan por metadatos
-                target_pages = [1, 2, 3]
-                keywords = ["comision", "comisión", "administraci", "administración", "rendimiento", "ter", "gasto", "neto", "pizarra", "serie"]
-                for page_num in range(3, total_pages):
-                    text_space = doc[page_num].get_text("text").lower()
-                    if any(kw in text_space for kw in keywords):
-                        target_pages.append(page_num + 1) # 1-indexed para pdfplumber
-                # Asegurar orden y unicidad
-                target_pages = sorted(list(set(target_pages)))
-                logger.info(f"Filtro PyMuPDF: {pdf_path.name} reducido de {total_pages} a {len(target_pages)} páginas de interés para extracción de tesis.")
+            for page_num in range(total_pages):
+                text = doc[page_num].get_text("text")
+                text_lower = text.lower()
+                
+                # Create a text block from PyMuPDF (fast extraction)
+                if text.strip():
+                    fitz_blocks.append(Block(
+                        kind="section",
+                        top=0.0,
+                        bottom=100.0,
+                        left=0.0,
+                        page=page_num + 1,
+                        index=1,
+                        text=(
+                            f"[SECTION_START page={page_num + 1} index=1]\n"
+                            f"{text.strip()}\n"
+                            f"[SECTION_END]"
+                        ),
+                    ))
+                
+                # Decide if this page needs pdfplumber (for table detection)
+                has_table_heading = any(h in text_lower for h in table_section_headings)
+                has_data_heading = any(h in text_lower for h in data_headings)
+                
+                if has_table_heading:
+                    target_pages_for_plumber.append(page_num + 1)
+                    text_strategy_pages.add(page_num + 1)
+                elif has_data_heading and page_num < 5:
+                    # First few pages with data headings also get plumber treatment
+                    target_pages_for_plumber.append(page_num + 1)
+            
             doc.close()
+            
+            # Limit pdfplumber pages to max 6 (performance guard)
+            if len(target_pages_for_plumber) > 6:
+                target_pages_for_plumber = target_pages_for_plumber[:6]
+            # Limit text strategy to max 2 pages
+            if len(text_strategy_pages) > 2:
+                text_strategy_pages = set(list(text_strategy_pages)[:2])
+                
+            logger.info(
+                f"Estrategia: {pdf_path.name} ({total_pages} págs) → "
+                f"fitz={total_pages} págs texto, "
+                f"pdfplumber={len(target_pages_for_plumber)} págs tablas"
+            )
+            
         except Exception as e:
-            logger.warning(f"Error al pre-filtrar con PyMuPDF: {e}. Procesando todas las páginas.")
+            logger.warning(f"Error con PyMuPDF: {e}. Fallback a pdfplumber puro.")
+            fitz_blocks = []
+            target_pages_for_plumber = []
+    
+    # Phase 2: pdfplumber table detection on select pages only
+    plumber_blocks: list[Block] = []
+    
+    if target_pages_for_plumber:
+        try:
+            with pdfplumber.open(str(pdf_path)) as pdf:
+                total_pdf_pages = len(pdf.pages)
+                page_time_budget = 8.0
+                
+                for page_number in target_pages_for_plumber:
+                    if page_number > total_pdf_pages:
+                        continue
+                    try:
+                        page_start = _time.time()
+                        page = pdf.pages[page_number - 1]
+                        
+                        use_text = page_number in text_strategy_pages
+                        tables = detect_tables(page, use_text_strategy=use_text)
+                        
+                        elapsed = _time.time() - page_start
+                        if elapsed > page_time_budget:
+                            logger.warning(
+                                f"Página {page_number} de {pdf_path.name} tardó {elapsed:.1f}s. "
+                                f"Saltando extracción detallada."
+                            )
+                            if tables:
+                                for index, table in enumerate(tables, start=1):
+                                    plumber_blocks.append(
+                                        table_block(table, page, page_number, index)
+                                    )
+                            continue
+                        
+                        if tables:
+                            # Extract table blocks with cell coordinates
+                            for index, table in enumerate(tables, start=1):
+                                plumber_blocks.append(
+                                    table_block(table, page, page_number, index)
+                                )
+                            
+                            # Also extract text outside tables for context
+                            words = page.extract_words(
+                                x_tolerance=1.5, y_tolerance=2,
+                                use_text_flow=False, keep_blank_chars=False,
+                            ) or []
+                            text_words = filter_words_outside_tables(words, tables)
+                            lines = build_lines(text_words)
+                            sections = build_sections(lines, page_number)
+                            plumber_blocks.extend(sections)
+                        
+                    except Exception as exc:
+                        logger.warning(
+                            "Error pdfplumber página %s de %s: %s",
+                            page_number, pdf_path.name, exc,
+                        )
+        except Exception as exc:
+            logger.warning(f"Error abriendo PDF con pdfplumber: {exc}")
+    
+    # Phase 3: Merge results — plumber tables take priority, fitz provides text
+    # If we got plumber blocks (tables), combine with fitz text blocks
+    if plumber_blocks:
+        # Remove fitz blocks for pages where plumber already extracted
+        plumber_pages = set(b.page for b in plumber_blocks)
+        filtered_fitz = [b for b in fitz_blocks if b.page not in plumber_pages]
+        all_blocks = filtered_fitz + plumber_blocks
+    elif fitz_blocks:
+        all_blocks = fitz_blocks
+    else:
+        # Full fallback: use pdfplumber on all pages (old behavior)
+        # This path is taken when fitz is not available
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            total_pdf_pages = len(pdf.pages)
+            pages_to_process = list(range(1, min(total_pdf_pages + 1, 8)))
+            
+            for page_number in pages_to_process:
+                try:
+                    page = pdf.pages[page_number - 1]
+                    tables = detect_tables(page, use_text_strategy=(page_number <= 3))
+                    words = page.extract_words(
+                        x_tolerance=1.5, y_tolerance=2,
+                        use_text_flow=False, keep_blank_chars=False,
+                    ) or []
+                    text_words = filter_words_outside_tables(words, tables)
+                    lines = build_lines(text_words)
+                    sections = build_sections(lines, page_number)
+                    table_blocks_list = [
+                        table_block(table, page, page_number, idx)
+                        for idx, table in enumerate(tables, start=1)
+                    ]
+                    page_blocks = sorted(
+                        [*sections, *table_blocks_list],
+                        key=lambda block: (block.top, block.left),
+                    )
+                    all_blocks.extend(page_blocks)
+                except Exception as exc:
+                    logger.warning(
+                        "Error procesando página %s de %s: %s",
+                        page_number, pdf_path.name, exc,
+                    )
 
-    with pdfplumber.open(str(pdf_path)) as pdf:
-        total_pdf_pages = len(pdf.pages)
-        # Si no pudimos pre-filtrar, procesar todo
-        pages_to_process = target_pages if target_pages else list(range(1, total_pdf_pages + 1))
-        
-        for page_number in pages_to_process:
-            if page_number > total_pdf_pages:
-                continue
-            try:
-                page = pdf.pages[page_number - 1]
-                tables = detect_tables(page)
-                words = page.extract_words(
-                    x_tolerance=1.5,
-                    y_tolerance=2,
-                    use_text_flow=False,
-                    keep_blank_chars=False,
-                ) or []
-
-                text_words = filter_words_outside_tables(words, tables)
-                lines = build_lines(text_words)
-                sections = build_sections(lines, page_number)
-                table_blocks = [
-                    table_block(table, page, page_number, index)
-                    for index, table in enumerate(tables, start=1)
-                ]
-
-                page_blocks = sorted(
-                    [*sections, *table_blocks],
-                    key=lambda block: (
-                        block.top,
-                        block.left,
-                        0 if block.kind == "section" else 1,
-                    ),
-                )
-                all_blocks.extend(page_blocks)
-            except Exception as exc:  # pragma: no cover
-                logger.warning(
-                    "Error procesando página %s de %s: %s",
-                    page_number, pdf_path.name, exc,
-                )
-
+    # Sort all blocks by page, then position
+    all_blocks.sort(key=lambda b: (b.page, b.top, b.left))
     return all_blocks
 
 

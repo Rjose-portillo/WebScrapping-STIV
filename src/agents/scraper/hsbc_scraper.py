@@ -1,18 +1,62 @@
+"""HSBC México fund document scraper with Azure WAF evasion.
+
+Downloads DICIs and Prospectos from HSBC's price & yield portal.
+Implements anti-detection patterns to avoid Azure WAF blocks.
+"""
+
 import os
 import logging
 import re
 import time
 import random
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import pandas as pd
-from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import (
+    sync_playwright,
+    Page,
+    Browser,
+    BrowserContext,
+    TimeoutError as PlaywrightTimeoutError,
+)
 
 from src.agents.scraper.retry_strategy import RetryStrategy
 from config.selectors import HSBCSelectors
 
 logger = logging.getLogger(__name__)
+
+# --- Anti-WAF configuration ---
+# Rotate through realistic UA strings (Chrome/Edge latest stable)
+_USER_AGENTS: List[str] = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+]
+
+_STEALTH_INIT_SCRIPT: str = """
+    // Hide webdriver flag
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    // Mimic Chrome runtime
+    window.chrome = { runtime: {}, csi: function(){}, loadTimes: function(){} };
+    // Realistic plugin array
+    Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5]
+    });
+    // Fake language and platform
+    Object.defineProperty(navigator, 'languages', {
+        get: () => ['es-MX', 'es', 'en-US', 'en']
+    });
+    Object.defineProperty(navigator, 'platform', {
+        get: () => 'Win32'
+    });
+    // Disable permissions query for notifications
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) =>
+        parameters.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission })
+            : originalQuery(parameters);
+"""
 
 class HSBCScraper:
     """
@@ -20,7 +64,7 @@ class HSBCScraper:
     Descarga el 'Documento Clave de Información' (DICI) y el 'Prospecto' para cada fondo.
     """
     
-    def __init__(self, url: str, download_dir: str, manifest_path: str):
+    def __init__(self, url: str, download_dir: str, manifest_path: str) -> None:
         """
         Inicializa el scraper de HSBC.
         
@@ -29,10 +73,10 @@ class HSBCScraper:
             download_dir: Directorio base para descargas.
             manifest_path: Ruta al archivo CSV de seguimiento.
         """
-        self.url = url
-        self.download_dir = download_dir
-        self.manifest_path = manifest_path
-        self.retry_strategy = RetryStrategy(max_retries=3, backoff_factor=2.0)
+        self.url: str = url
+        self.download_dir: str = download_dir
+        self.manifest_path: str = manifest_path
+        self.retry_strategy: RetryStrategy = RetryStrategy(max_retries=3, backoff_factor=2.0)
         
         # Asegurar infraestructura de datos
         os.makedirs(self.download_dir, exist_ok=True)
@@ -41,7 +85,7 @@ class HSBCScraper:
     def _init_manifest(self) -> None:
         """Inicializa el archivo manifest si no existe."""
         if not os.path.exists(self.manifest_path):
-            columns = [
+            columns: List[str] = [
                 'fecha_consulta', 'fondo', 'tipo_documento', 'archivo_destino', 'estado'
             ]
             pd.DataFrame(columns=columns).to_csv(self.manifest_path, index=False)
@@ -50,8 +94,13 @@ class HSBCScraper:
     def _navegar(self, page: Page) -> None:
         """Navega a la página y espera a que el dropdown esté listo."""
         logger.info(f"Navegando a HSBC: {self.url}")
-        page.goto(self.url, wait_until="networkidle")
+        # Add random pre-navigation delay to avoid fingerprinting
+        time.sleep(random.uniform(1.5, 3.0))
+        page.goto(self.url, wait_until="networkidle", timeout=90000)
+        # Extra stability wait for dynamic content
+        page.wait_for_timeout(random.randint(1500, 3000))
         page.wait_for_selector(HSBCSelectors.DROPDOWN_FONDOS, state="visible", timeout=60000)
+        logger.info("HSBC: Dropdown de fondos visible y listo.")
 
     def _limpiar_nombre(self, texto: str, max_len: int = 100) -> str:
         """Sanitiza strings para su uso como nombres de archivos."""
@@ -159,42 +208,93 @@ class HSBCScraper:
             
         return descargados_familia
 
+    def _create_stealth_context(self, browser: Browser) -> BrowserContext:
+        """Create a browser context with comprehensive anti-detection."""
+        selected_ua: str = random.choice(_USER_AGENTS)
+        # Randomize viewport slightly to avoid fingerprinting
+        width: int = random.choice([1280, 1366, 1440, 1536])
+        height: int = random.choice([768, 800, 900, 864])
+        
+        context: BrowserContext = browser.new_context(
+            accept_downloads=True,
+            user_agent=selected_ua,
+            viewport={"width": width, "height": height},
+            locale="es-MX",
+            timezone_id="America/Mexico_City",
+            extra_http_headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Accept-Encoding": "gzip, deflate, br",
+                "DNT": "1",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+            },
+        )
+        logger.info(f"HSBC context: UA={selected_ua[:60]}..., viewport={width}x{height}")
+        return context
+
+    def _detect_waf_block(self, page: Page) -> bool:
+        """Detect if Azure WAF or Cloudflare has blocked the request."""
+        try:
+            title: str = page.title().lower()
+            body_start: str = page.locator("body").inner_text()[:300].lower()
+            blocked_signals = ["403", "forbidden", "access denied", "blocked", "attention required"]
+            return any(sig in title or sig in body_start for sig in blocked_signals)
+        except Exception:
+            return False
+
     def extraer(self) -> None:
         """Método principal para orquestar la extracción de HSBC."""
         with sync_playwright() as p:
-            # Evasión Antidetect para mantener consistencia y evitar timeouts
-            browser = p.chromium.launch(
+            # Stealth browser launch with anti-detection args
+            browser: Browser = p.chromium.launch(
                 headless=False,
                 channel="msedge",
-                args=["--disable-blink-features=AutomationControlled"]
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-features=IsolateOrigins,site-per-process",
+                    "--disable-dev-shm-usage",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                ]
             )
-            context = browser.new_context(
-                accept_downloads=True,
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
-            )
-            page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                window.chrome = { runtime: {} };
-                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-            """)
+            context: BrowserContext = self._create_stealth_context(browser)
+            page: Page = context.new_page()
+            page.add_init_script(_STEALTH_INIT_SCRIPT)
             
             try:
                 self.retry_strategy.execute(self._navegar, page)
                 
+                # WAF detection checkpoint
+                if self._detect_waf_block(page):
+                    raise RuntimeError(
+                        "Azure WAF blocked HSBC request (403). "
+                        "Cooldown period recommended before retry."
+                    )
+                
                 # Obtener todas las opciones del dropdown (excepto la primera si es placeholder)
-                options = page.locator(f"{HSBCSelectors.DROPDOWN_FONDOS} option").all_inner_texts()
+                options: List[str] = page.locator(
+                    f"{HSBCSelectors.DROPDOWN_FONDOS} option"
+                ).all_inner_texts()
                 logger.info(f"Familias de fondos encontradas: {len(options)}")
                 
-                total_descargados = 0
-                for familia in options:
+                total_descargados: int = 0
+                for idx, familia in enumerate(options):
                     if familia.strip():
                         total_descargados += self._procesar_familia(page, familia)
-                        # Delay entre familias
-                        time.sleep(random.uniform(2.0, 4.0))
+                        # Randomized delay between families (increasing with index)
+                        base_delay: float = random.uniform(3.0, 6.0)
+                        extra_delay: float = min(idx * 0.5, 5.0)  # progressive slowdown
+                        time.sleep(base_delay + extra_delay)
                 
                 logger.info(f"Extracción HSBC finalizada. Total descargados: {total_descargados}")
                 
             except Exception as e:
                 logger.critical(f"Fallo crítico en el scraper de HSBC: {e}")
+                raise
             finally:
+                context.close()
                 browser.close()
